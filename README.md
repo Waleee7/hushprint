@@ -2,16 +2,19 @@
 
 **Your photos know where you live. Hushprint shows you what they're saying, then makes them hush.**
 
-Drop a photo. See the exact GPS spot, phone model, serial number, timestamp and hidden thumbnail inside it. Wipe all of it in one tap, and prove it worked. Everything runs in your browser. Nothing is uploaded, and the page is not even *allowed* to make a network request.
-
-> **Repo description:** See exactly what hidden data your photos leak (GPS, device serials, hidden thumbnails), then strip it. 100% in-browser, zero uploads, hand-written JPEG/PNG/EXIF/XMP engine.
-> **Topics:** `privacy` `exif` `metadata` `gps` `photo-privacy` `exif-remover` `metadata-stripper` `jpeg` `png` `xmp` `client-side` `local-first` `csp` `typescript` `react` `vite`
-
 | What's leaking | After "Clean & download" |
 |---|---|
 | ![Report with GPS findings](docs/desktop-loaded.png) | ![Verified clean](docs/desktop-cleaned.png) |
 
-Mobile-first: [empty](docs/mobile-empty.png) / [report](docs/mobile-loaded.png) / [cleaned](docs/mobile-cleaned.png).
+**Drop** a photo. **See** the GPS spot, phone, serial number and hidden thumbnail inside it. **Clean** it in one tap, and check the proof. It all happens in your browser: nothing is uploaded, and the page is not even allowed to make a network request.
+
+```bash
+npm install
+npm run dev     # then open http://localhost:5173 and click "Try a sample with GPS"
+npm test        # 25 tests
+```
+
+Mobile views: [empty](docs/mobile-empty.png), [report](docs/mobile-loaded.png), [cleaned](docs/mobile-cleaned.png).
 
 ## Who it's for
 
@@ -31,6 +34,9 @@ Each finding comes with a severity (critical, high, medium, low), a plain-Englis
 
 All of it is hand-written TypeScript in [`src/engine`](src/engine), with no parsing libraries.
 
+<details>
+<summary>Engine internals (for the curious)</summary>
+
 | Piece | What it does |
 |---|---|
 | `jpeg.ts` | Marker-level walker. Handles byte-stuffing, RST markers, progressive scans, EOI. Reads APP1 EXIF, XMP, APP13 IPTC, COM. Rebuilds the file keeping only what is needed to display it. |
@@ -38,6 +44,8 @@ All of it is hand-written TypeScript in [`src/engine`](src/engine), with no pars
 | `png.ts` | Chunk parser with CRC checks. Reads tEXt/zTXt/iTXt/eXIf/tIME. Keeps only chunks that affect rendering (incl. APNG), drops everything else and anything after IEND. |
 | `analyze.ts` | Turns raw tags into findings, severities and the plain-English risk summary. Runs strip, then **re-parses the output** to verify. |
 | `zip.ts` | Tiny ZIP writer for "download all". |
+
+</details>
 
 **Stripping is lossless.** The pixel stream is never decoded or re-compressed, so there is no quality loss. A CRC over the pixel data before and after proves it (`Pixels byte-identical` in the UI).
 
@@ -64,19 +72,16 @@ All of it is hand-written TypeScript in [`src/engine`](src/engine), with no pars
 - Nearest-city distances use a small built-in list of ~70 cities, not a full gazetteer.
 - Not a forensic guarantee against techniques outside the file itself (sensor noise fingerprints, filename, filesystem timestamps).
 
-## Run it
+## All commands
 
 ```bash
-npm install
-npm run dev          # http://localhost:5173 (no CSP in dev; it is injected in production builds)
-npm test             # 25 tests: parsers, strippers, round-trips, fuzzing, zip
-npm run build        # typecheck + production build into dist/
-npm run preview      # serve the build with the strict CSP
+npm run dev       # dev server (no CSP in dev; it is injected in production builds)
+npm test          # parsers, strippers, round trips, fuzzing, zip
+npm run build     # typecheck + production build into dist/
+npm run preview   # serve the build with the strict CSP
 ```
 
-Click **Try a sample with GPS** for a planted fake photo (a crop whose hidden thumbnail still shows the mailbox) and a PNG with an AI prompt and leftover bytes. Fixtures are generated in code; no copyrighted images.
-
-Screenshots: `npm run build && npx vite preview --port 4173` then `PLAYWRIGHT_PATH=... node scripts/screenshots.mjs`.
+Fixtures are generated in code; no copyrighted images. Screenshots: `npm run build && npx vite preview --port 4173`, then `PLAYWRIGHT_PATH=... node scripts/screenshots.mjs`.
 
 ## Tests
 
@@ -98,3 +103,9 @@ Screenshots: `npm run build && npx vite preview --port 4173` then `PLAYWRIGHT_PA
 ## Stack
 
 Vite, React, TypeScript, Vitest. Fonts (Bricolage Grotesque, JetBrains Mono) are bundled locally.
+
+---
+
+**Repo description:** See exactly what hidden data your photos leak (GPS, device serials, hidden thumbnails), then strip it. 100% in-browser, zero uploads, hand-written JPEG/PNG/EXIF/XMP engine.
+
+**Topics:** `privacy` `exif` `metadata` `gps` `photo-privacy` `exif-remover` `metadata-stripper` `jpeg` `png` `xmp` `client-side` `local-first` `csp` `typescript` `react` `vite`

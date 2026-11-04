@@ -27,7 +27,7 @@ for (const [name, vp] of [['desktop', { width: 1440, height: 900 }], ['mobile', 
   await page.waitForTimeout(450);
   await page.screenshot({ path: `${out}/${name}-scrubbing.png` });
   const d = await dl; problems.push(`${name} download: ${d.suggestedFilename()}`);
-  await page.waitForSelector('.sev-bg-clean'); await page.waitForTimeout(2200);
+  await page.waitForSelector('.sev-bg-clean'); await page.waitForTimeout(3000);
   await page.screenshot({ path: `${out}/${name}-cleaned.png` });
   await page.screenshot({ path: `${out}/${name}-cleaned-full.png`, fullPage: true });
   const csp = await page.evaluate(() => window.__csp);

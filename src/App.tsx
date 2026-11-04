@@ -28,6 +28,7 @@ export function App() {
   const [drag, setDrag] = useState(false);
   const [proof, setProof] = useState(false);
   const [announce, setAnnounce] = useState('');
+  const [saved, setSaved] = useState<{ name: string; again: () => void }>();
   const input = useRef<HTMLInputElement>(null);
 
   const addFiles = useCallback(async (files: File[]) => {
@@ -62,8 +63,16 @@ export function App() {
   const cur = items.find((i) => i.id === selected) ?? items[0];
   const totalLeaks = ready.reduce((n, i) => n + i.analysis!.findings.filter((f) => f.label !== 'Orientation').length, 0);
 
-  const download = (i: Item) => i.result && saveBlob(new Blob([i.result.bytes as BlobPart], { type: mimeFor(i.analysis!.format) }), cleanName(i.file.name));
-  const downloadAll = (list: Item[]) => saveBlob(zipFiles(list.filter((i) => i.result).map((i) => ({ name: cleanName(i.file.name), bytes: i.result!.bytes }))), 'hushprint-clean.zip');
+  const download = (i: Item) => {
+    if (!i.result) return;
+    const name = cleanName(i.file.name);
+    const go = () => saveBlob(new Blob([i.result!.bytes as BlobPart], { type: mimeFor(i.analysis!.format) }), name);
+    go(); setSaved({ name, again: go });
+  };
+  const downloadAll = (list: Item[]) => {
+    const go = () => saveBlob(zipFiles(list.filter((i) => i.result).map((i) => ({ name: cleanName(i.file.name), bytes: i.result!.bytes }))), 'hushprint-clean.zip');
+    go(); setSaved({ name: 'hushprint-clean.zip', again: go });
+  };
 
   const runClean = async () => {
     setBusy(true);
@@ -92,7 +101,7 @@ export function App() {
           <div className="workspace">
             <aside className="rail" aria-label="Files">
               <div className="rail-head">
-                <h2>Files <span className="count">{items.length}</span></h2>
+                <h2>Files <span className="count">{items.length}</span>{items.length > 1 && <span className="swipe">swipe {'\u2192'}</span>}</h2>
                 <button className="link" onClick={() => input.current?.click()}>+ Add</button>
               </div>
               <ul className="files">
@@ -110,6 +119,9 @@ export function App() {
                   </li>
                 ))}
               </ul>
+              <div className="settings">
+                <label className="check"><input type="checkbox" checked={keepRotation} disabled={allCleaned} onChange={(e) => setKeepRotation(e.target.checked)} /> Keep photo rotation <span className="hint">(recommended)</span></label>
+              </div>
               <button className="link subtle" onClick={reset}>Remove all &amp; start over</button>
             </aside>
             <section className="report" aria-label="Report" key={cur?.id}>
@@ -124,9 +136,10 @@ export function App() {
           <div className="ab-inner">
             <div className="ab-info">
               <strong>{allCleaned ? 'All clean' : `${totalLeaks} leak${totalLeaks === 1 ? '' : 's'} found`}</strong>
-              <span>{ready.length} file{ready.length === 1 ? '' : 's'} {'·'} stays on this device</span>
+{allCleaned && saved
+                ? <span className="saved"><span aria-hidden="true">{'\u2713'}</span> Saved<span className="sname"> {saved.name}</span> <button className="link inline" onClick={saved.again}>Download again</button></span>
+                : <span>{ready.length} file{ready.length === 1 ? '' : 's'} stays on this device</span>}
             </div>
-            <label className="check"><input type="checkbox" checked={keepRotation} disabled={allCleaned} onChange={(e) => setKeepRotation(e.target.checked)} /> Keep rotation</label>
             {allCleaned ? (
               <div className="ab-btns">
                 {cur?.result && ready.length > 1 && <button className="btn ghost" onClick={() => download(cur)}>This file</button>}
@@ -203,9 +216,12 @@ function Empty({ onPick, onSample }: { onPick: () => void; onSample: () => void 
 
 function Report({ item }: { item: Item }) {
   const a = item.analysis;
+  const done = !!item.result;
+  // play the scrub animation, then fold the per-category detail away so the clean state stays short
+  const [folded, setFolded] = useState(done);
+  useEffect(() => { if (!done) return; const t = setTimeout(() => setFolded(true), 1900); return () => clearTimeout(t); }, [done]);
   if (item.error) return <div className="verdict sev-bg-high"><p className="eyebrow">{item.file.name}</p><h2>We couldn&rsquo;t scan this file.</h2><p className="lede">{item.error}</p></div>;
   if (!a) return <div className="verdict"><p className="eyebrow">{item.file.name}</p><h2>Scanning&hellip;</h2></div>;
-  const done = !!item.result;
   const leaks = a.findings.filter((f) => f.label !== 'Orientation');
   const counts = (['critical', 'high', 'medium', 'low'] as Severity[]).map((s) => [s, leaks.filter((f) => f.severity === s).length] as const).filter(([, n]) => n);
   const groups = (Object.keys(CATEGORY_TITLE) as Category[])
@@ -228,7 +244,7 @@ function Report({ item }: { item: Item }) {
         {a.warnings.length > 0 && <p className="warn">{a.warnings.join(' ')}</p>}
       </div>
 
-      {(a.gps || a.thumbnail) && (
+      {!folded && (a.gps || a.thumbnail) && (
         <div className="panels">
           {a.gps && (
             <div className={`panel map-panel${done ? ' removed' : ''}`}>
@@ -254,7 +270,7 @@ function Report({ item }: { item: Item }) {
         </div>
       )}
 
-      <div className="cards">
+      <div className="cards" hidden={folded}>
         {groups.length === 0 && <p className="nothing">No metadata fields found. This image is already quiet.</p>}
         {groups.map(({ cat, list }) => {
           const top = list.reduce<Severity>((m, f) => (RANK[f.severity] > RANK[m] ? f.severity : m), 'info');
