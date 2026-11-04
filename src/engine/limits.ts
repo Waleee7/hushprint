@@ -1,0 +1,22 @@
+// Hard caps. Every allocation or loop driven by untrusted input is bounded by one of these.
+export const MAX_FILE_BYTES = 256 * 1024 * 1024;   // refuse to read anything larger
+export const MAX_INFLATE_BYTES = 4 * 1024 * 1024;  // any decompressed metadata stream (PNG text, PDF XMP, Office XML)
+export const MAX_OBJSTM_BYTES = 8 * 1024 * 1024;   // one PDF object stream
+export const MAX_INFLATE_TOTAL = 24 * 1024 * 1024; // all decompression done for one file
+export const MAX_ITEM_BYTES = 16 * 1024 * 1024;    // one HEIC item (Exif/XMP) assembled from extents
+export const MAX_XMP_CHARS = 128 * 1024;           // XMP text we look at per packet
+export const MAX_XMP_WORK = 1024 * 1024;           // total XMP characters examined per file
+export const MAX_FINDINGS = 400;                   // findings kept per file
+export const MAX_META_SEGMENTS = 256;              // JPEG XMP/IPTC/COM segments read
+export const MAX_SEGMENTS = 1_000_000;             // JPEG markers
+export const MAX_CHUNKS = 200_000;                 // PNG / WebP chunks
+export const MAX_BOXES = 50_000;                   // ISO-BMFF boxes visited
+export const MAX_BOX_DEPTH = 8;
+export const MAX_ZIP_ENTRIES = 10_000;
+export const MAX_PDF_OBJECTS = 300_000;
+export const MAX_PDF_OBJSTMS = 64;
+export const MAX_PDF_DICT = 1024 * 1024;           // one PDF dictionary
+export const MAX_TIFF_WORK = 2_000_000;            // total tag elements/bytes decoded from one EXIF block
+export const MAX_PIXELS = 160_000_000;             // canvas re-encode ceiling (width x height)
+export const MAX_BATCH_FILES = 500;
+export const MAX_BATCH_BYTES = 1024 * 1024 * 1024;

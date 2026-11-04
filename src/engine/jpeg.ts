@@ -1,5 +1,6 @@
 // JPEG marker-level parser and lossless metadata stripper. Pixel data is never decoded or re-encoded.
 import { ParseError, concat, p16be, startsWith, toAscii, u16be, utf8 } from './bytes.ts';
+import { MAX_META_SEGMENTS, MAX_SEGMENTS } from './limits.ts';
 import { minimalOrientationTiff } from './tiff.ts';
 import { parseIptc, type IptcField } from './xmp.ts';
 
@@ -26,7 +27,9 @@ export const parseJpeg = (b: Uint8Array): JpegInfo => {
   const info: JpegInfo = { width: 0, height: 0, xmp: [], iptc: [], comments: [], apps: [], trailing: { offset: b.length, length: 0, startsWithJpeg: false }, pieces: [] };
   let pos = 2;
   let sawEoi = false;
+  let metaSegs = 0;
   while (pos < b.length) {
+    if (info.pieces.length > MAX_SEGMENTS) throw new ParseError('too many JPEG segments');
     if (b[pos] !== 0xff) throw new ParseError(`expected marker at ${pos}`);
     while (b[pos + 1] === 0xff) pos++; // fill bytes
     const m = b[pos + 1];
@@ -40,11 +43,13 @@ export const parseJpeg = (b: Uint8Array): JpegInfo => {
     info.pieces.push({ kind: 'seg', marker: m, start: pos, end });
     if (isSof(m) && !info.width) { info.height = u16be(payload, 1); info.width = u16be(payload, 3); }
     if (m === 0xe1 && startsWith(payload, 0, EXIF_SIG)) info.exif ??= payload.subarray(6);
+    else if (metaSegs >= MAX_META_SEGMENTS) { /* ignore the flood; the strip pass still drops every one of them */ }
     else if (m === 0xe1 && (startsWith(payload, 0, XMP_SIG) || startsWith(payload, 0, XMP_EXT))) {
+      metaSegs++;
       info.xmp.push(utf8(payload.subarray(startsWith(payload, 0, XMP_SIG) ? XMP_SIG.length : XMP_EXT.length)));
-    } else if (m === 0xed) info.iptc.push(...parseIptc(payload));
-    else if (m === 0xfe) info.comments.push(utf8(payload));
-    if (m >= 0xe0 && m <= 0xef) info.apps.push(`APP${m - 0xe0}:${toAscii(payload.subarray(0, 12)).split('\0')[0]}`);
+    } else if (m === 0xed) { metaSegs++; for (const f of parseIptc(payload)) info.iptc.push(f); }
+    else if (m === 0xfe) { metaSegs++; info.comments.push(utf8(payload)); }
+    if (m >= 0xe0 && m <= 0xef && info.apps.length < MAX_META_SEGMENTS) info.apps.push(`APP${m - 0xe0}:${toAscii(payload.subarray(0, 12)).split('\0')[0]}`);
     pos = end;
     if (m === 0xda) {
       let j = end;

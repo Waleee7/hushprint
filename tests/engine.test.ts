@@ -184,11 +184,10 @@ describe('PNG', () => {
 });
 
 describe('format detection + robustness', () => {
-  it('explains HEIC and unknown formats clearly', () => {
-    const heic = concat([Uint8Array.of(0, 0, 0, 24), ascii('ftypheic'), new Uint8Array(16)]);
-    expect(() => detectFormat(heic)).toThrow(UnsupportedFormat);
-    expect(() => detectFormat(heic)).toThrow(/Most Compatible/);
-    expect(() => detectFormat(ascii('%PDF-1.7'))).toThrow(/JPEG and PNG/);
+  it('explains unsupported formats clearly (HEIC and PDF are supported since v2, see formats.test.ts)', () => {
+    const avif = concat([Uint8Array.of(0, 0, 0, 24), ascii('ftypavif'), new Uint8Array(16)]);
+    expect(() => detectFormat(avif)).toThrow(UnsupportedFormat);
+    expect(() => detectFormat(ascii('GIF89a......'))).toThrow(/JPEG, PNG, WebP, HEIC, PDF/);
   });
   it('never crashes with anything but a ParseError on mutated files (fuzz)', async () => {
     const base = injectMetadata(syntheticJpeg(), { ...HOME, thumbnail: syntheticJpeg(10, 10) });

@@ -1,3 +1,5 @@
+import { MAX_INFLATE_BYTES } from './limits.ts';
+
 export class ParseError extends Error {}
 
 export const concat = (parts: Uint8Array[]): Uint8Array => {
@@ -11,7 +13,7 @@ export const ascii = (s: string): Uint8Array => Uint8Array.from(s, (c) => c.char
 
 export const toAscii = (b: Uint8Array): string => {
   let s = '';
-  for (const x of b) s += String.fromCharCode(x);
+  for (let i = 0; i < b.length; i += 8192) s += String.fromCharCode.apply(null, b.subarray(i, i + 8192) as unknown as number[]);
   return s;
 };
 
@@ -24,6 +26,10 @@ export const startsWith = (b: Uint8Array, at: number, sig: number[] | string): b
 export const u16be = (b: Uint8Array, o: number) => (b[o] << 8) | b[o + 1];
 export const u32be = (b: Uint8Array, o: number) => ((b[o] << 24) | (b[o + 1] << 16) | (b[o + 2] << 8) | b[o + 3]) >>> 0;
 export const p32be = (n: number) => Uint8Array.of((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
+export const u16le = (b: Uint8Array, o: number) => b[o] | (b[o + 1] << 8);
+export const u32le = (b: Uint8Array, o: number) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
+export const p16le = (n: number) => Uint8Array.of(n & 255, (n >>> 8) & 255);
+export const p32le = (n: number) => Uint8Array.of(n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255);
 export const p16be = (n: number) => Uint8Array.of((n >>> 8) & 255, n & 255);
 
 let table: Uint32Array | undefined;
@@ -41,9 +47,28 @@ export const crc32 = (data: Uint8Array, seed = 0): number => {
   return ~c >>> 0;
 };
 
-export const inflate = async (data: Uint8Array): Promise<Uint8Array> => {
-  const stream = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream('deflate'));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+/**
+ * Bounded decompression. The output is read chunk by chunk and the stream is cancelled the moment it
+ * would exceed `max`, so a decompression bomb costs at most `max` bytes of memory.
+ */
+export const inflate = async (data: Uint8Array, opts: { raw?: boolean; max?: number } = {}): Promise<Uint8Array> => {
+  const max = opts.max ?? MAX_INFLATE_BYTES;
+  const reader = new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream(opts.raw ? 'deflate-raw' : 'deflate')).getReader();
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      if (total > max) { await reader.cancel().catch(() => undefined); throw new ParseError(`compressed data expands past the ${Math.round(max / 1024)} KB safety limit`); }
+      parts.push(value);
+    }
+  } catch (e) {
+    if (e instanceof ParseError) throw e;
+    throw new ParseError('corrupt compressed data');
+  }
+  return concat(parts);
 };
 
 export const utf8 = (b: Uint8Array) => new TextDecoder('utf-8', { fatal: false }).decode(b);

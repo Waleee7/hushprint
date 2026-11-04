@@ -1,7 +1,8 @@
 import { makeZip } from './engine/zip.ts';
 
 export const cleanName = (name: string) => name.replace(/(\.[^.]+)?$/, (e) => `-clean${e}`);
-export const mimeFor = (format: 'jpeg' | 'png') => (format === 'jpeg' ? 'image/jpeg' : 'image/png');
+import { MIME, type Format } from './engine/types.ts';
+export const mimeFor = (format: Format) => MIME[format];
 
 export const saveBlob = (blob: Blob, filename: string) => {
   const url = URL.createObjectURL(blob);

@@ -1,5 +1,6 @@
 // Hand-written TIFF/EXIF reader and writer (JPEG APP1, PNG eXIf). No dependencies.
 import { ParseError, ascii, concat, toAscii } from './bytes.ts';
+import { MAX_TIFF_WORK } from './limits.ts';
 
 export type Rational = [number, number];
 export type TagValue = string | number | number[] | Rational[] | Uint8Array;
@@ -27,11 +28,14 @@ export const parseTiff = (buf: Uint8Array): ParsedTiff => {
   if (u16(2) !== 42) throw new ParseError('bad TIFF magic');
   const warnings: string[] = [];
   const seen = new Set<number>();
+  let work = 0; // elements/bytes decoded so far; overlapping hostile entries cannot multiply memory past MAX_TIFF_WORK
 
   const readValue = (type: number, count: number, at: number): TagValue => {
     const size = (TYPE_SIZE[type] ?? 1) * count;
     const off = size <= 4 ? at : u32(at);
     if (off + size > buf.length) throw new ParseError('value out of range');
+    work += count;
+    if (work > MAX_TIFF_WORK) throw new ParseError('EXIF block decodes to too much data');
     switch (type) {
       case 2: return toAscii(buf.subarray(off, off + count)).replace(/\0+$/, '');
       case 3: return Array.from({ length: count }, (_, i) => u16(off + i * 2));
@@ -42,7 +46,7 @@ export const parseTiff = (buf: Uint8Array): ParsedTiff => {
       case 10: return Array.from({ length: count }, (_, i) => [dv.getInt32(off + i * 8, little), dv.getInt32(off + i * 8 + 4, little)] as Rational);
       case 11: return Array.from({ length: count }, (_, i) => dv.getFloat32(off + i * 4, little));
       case 12: return Array.from({ length: count }, (_, i) => dv.getFloat64(off + i * 8, little));
-      default: return buf.slice(off, off + count);
+      default: return buf.subarray(off, off + count);
     }
   };
 

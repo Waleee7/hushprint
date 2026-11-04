@@ -1,5 +1,6 @@
 // PNG chunk parser and lossless stripper (drops text/EXIF/time chunks and anything after IEND).
 import { ParseError, concat, crc32, inflate, p32be, startsWith, toAscii, u32be, utf8 } from './bytes.ts';
+import { MAX_CHUNKS, MAX_META_SEGMENTS } from './limits.ts';
 import { minimalOrientationTiff } from './tiff.ts';
 
 export interface PngText { keyword: string; text: string; compressed: boolean }
@@ -27,10 +28,12 @@ export const parsePng = async (b: Uint8Array): Promise<PngInfo> => {
     const type = toAscii(b.subarray(pos + 4, pos + 8));
     const end = pos + 12 + len;
     if (end > b.length) throw new ParseError(`chunk ${type} overruns file`);
+    if (info.chunks.length >= MAX_CHUNKS) throw new ParseError('too many PNG chunks');
     const data = b.subarray(pos + 8, pos + 8 + len);
     if (crc32(b.subarray(pos + 4, pos + 8 + len)) !== u32be(b, pos + 8 + len)) throw new ParseError(`bad CRC in ${type}`);
     info.chunks.push({ type, start: pos, end });
     if (type === 'IHDR') { info.width = u32be(data, 0); info.height = u32be(data, 4); }
+    else if ((type === 'tEXt' || type === 'zTXt' || type === 'iTXt') && info.text.length + info.xmp.length >= MAX_META_SEGMENTS) { /* flood ignored; strip still drops them */ }
     else if (type === 'tEXt') { const z = nul(data, 0); info.text.push({ keyword: toAscii(data.subarray(0, z)), text: toAscii(data.subarray(z + 1)), compressed: false }); }
     else if (type === 'zTXt') {
       const z = nul(data, 0);
