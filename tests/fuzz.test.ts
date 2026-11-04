@@ -13,7 +13,7 @@ const PHOTO: PhotoSpec = { lat: 33.78, lon: -84.37, altitude: 3, make: 'Apple', 
 const rng = (seed: number) => () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
 
 const mutate = (base: Uint8Array, r: () => number): Uint8Array => {
-  let b = base.slice();
+  let b: Uint8Array = base.slice();
   const mode = r();
   if (mode < 0.25) return b.subarray(0, Math.floor(r() * b.length));                       // truncate
   if (mode < 0.35) { const at = Math.floor(r() * b.length); b = concat([b.subarray(0, at), b.subarray(at + Math.floor(r() * 40))]); } // delete a span

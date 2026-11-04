@@ -1,7 +1,8 @@
 // Builds demo files in the browser: real canvas-rendered images carrying fictional, planted metadata.
 import { ascii, concat } from './engine/bytes.ts';
-import { injectMetadata, pngChunk } from './engine/fixtures.ts';
+import { injectMetadata, injectWebp, pngChunk, syntheticOffice, syntheticPdf } from './engine/fixtures.ts';
 
+const MIME_DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 const W = 1600, H = 1200;
 
 const drawScene = (): HTMLCanvasElement => {
@@ -60,8 +61,19 @@ export const makeSampleFiles = async (): Promise<File[]> => {
   const leftover = ascii(`aCropalypse demo: this is where an editor can leave the uncropped original. ${'x'.repeat(2400)}`);
   const png = concat([art.subarray(0, 33), extra, art.subarray(33), leftover]);
 
-  return [
+  const files = [
     new File([photo as BlobPart], 'birthday-yard.jpg', { type: 'image/jpeg' }),
     new File([png as BlobPart], 'ai-render.png', { type: 'image/png' }),
   ];
+  const webpRaw = await toBytes(crop(scene, 0, 300, 1000, 750, 640, 480), 'image/webp', 0.8).catch(() => undefined);
+  if (webpRaw && webpRaw[0] === 0x52) { // 'R' of RIFF: this browser can encode WebP
+    const webp = injectWebp(webpRaw, { exif: { lat: 33.78533, lon: -84.37381, make: 'Google', model: 'Pixel 8', serial: 'DEMO-PX-3381', taken: '2026:06:09 08:15:44' } });
+    files.push(new File([webp as BlobPart], 'listing-photo.webp', { type: 'image/webp' }));
+  }
+  const pdf = await syntheticPdf({ info: { Author: 'Jordan Rivera', Creator: 'Microsoft Word', Producer: 'Microsoft Word for Microsoft 365', Title: 'Offer letter - draft 3', CreationDate: "D:20260608143211-04'00'", ModDate: "D:20260610091500-04'00'" },
+    xmp: '<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:CreatorTool="Microsoft Word"><dc:creator><rdf:Seq><rdf:li>Jordan Rivera</rdf:li></rdf:Seq></dc:creator></rdf:Description></rdf:RDF></x:xmpmeta>' });
+  const docx = syntheticOffice({ kind: 'docx', creator: 'Jordan Rivera', lastModifiedBy: 'Sam Patel', company: 'Peachtree Holdings', manager: 'Dana Cole', created: '2026-06-08T14:32:11Z', modified: '2026-06-10T09:15:00Z',
+    revision: '14', application: 'Microsoft Office Word', template: 'Normal.dotm', totalTime: '212', title: 'Q3 reorg plan', thumbnail: true });
+  files.push(new File([pdf as BlobPart], 'offer-letter.pdf', { type: 'application/pdf' }), new File([docx as BlobPart], 'q3-plan.docx', { type: MIME_DOCX }));
+  return files;
 };

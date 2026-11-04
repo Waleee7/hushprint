@@ -1,14 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent } from 'react';
-import { CATEGORY_TITLE, RANK, analyze, clean, type Analysis, type Category, type CleanResult, type Finding, type Severity } from './engine/analyze.ts';
+import { CATEGORY_TITLE, FORMAT_LABEL, NeedsReencode, RANK, analyze, clean, type Analysis, type Category, type CleanResult, type Finding, type Severity } from './engine/analyze.ts';
+import { MAX_BATCH_BYTES, MAX_BATCH_FILES, MAX_FILE_BYTES } from './engine/limits.ts';
+import { cleanName, randomName, safeZipPath } from './engine/names.ts';
+import { BAND_LABEL, batchScore, scoreBand } from './engine/score.ts';
+import { MIME, isPreviewable } from './engine/types.ts';
+import { EXTENSIONS, entriesFromDrop, fromInput, walk, type Picked } from './batch.ts';
+import { rasterize } from './raster.ts';
 import { formatCoord, formatDistance, nearestCity } from './engine/geo.ts';
 import { Radar, WorldMap } from './GeoMap.tsx';
-import { cleanName, mimeFor, saveBlob, zipFiles } from './download.ts';
+import { saveBlob, zipFiles } from './download.ts';
 import { makeSampleFiles } from './sample.ts';
 
+type Mode = 'normal' | 'share';
 interface Item {
-  id: string; file: File; bytes?: Uint8Array; analysis?: Analysis; error?: string; result?: CleanResult;
-  url: string; thumbUrl?: string;
+  id: string; file: File; path: string; analysis?: Analysis; error?: string; result?: CleanResult; mode?: Mode; outName?: string;
+  cleanError?: string; url: string; thumbUrl?: string;
 }
+interface Progress { label: string; done: number; total: number }
+const tick = () => new Promise<void>((r) => setTimeout(r, 0));
 
 const SEV_LABEL: Record<Severity, string> = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', info: 'Info' };
 const SEV_GLYPH: Record<Severity, string> = { critical: '▲', high: '◆', medium: '●', low: '○', info: '·' };
@@ -29,64 +38,110 @@ export function App() {
   const [proof, setProof] = useState(false);
   const [announce, setAnnounce] = useState('');
   const [saved, setSaved] = useState<{ name: string; again: () => void }>();
+  const [progress, setProgress] = useState<Progress>();
+  const [notice, setNotice] = useState<string>();
   const input = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
 
-  const addFiles = useCallback(async (files: File[]) => {
-    const news: Item[] = files.slice(0, 40).map((file) => ({ id: `f${++uid}`, file, url: URL.createObjectURL(file) }));
+  const addFiles = useCallback(async (picked: Picked[], skipped = 0, capped = false) => {
+    const notes: string[] = [];
+    let bytes = 0;
+    const accepted: Picked[] = [];
+    for (const p of picked) {
+      if (accepted.length >= MAX_BATCH_FILES) { capped = true; break; }
+      if (p.file.size > MAX_FILE_BYTES) { notes.push(`${p.file.name} is over ${MAX_FILE_BYTES / 1048576} MB`); continue; }
+      if (bytes + p.file.size > MAX_BATCH_BYTES) { capped = true; break; }
+      bytes += p.file.size; accepted.push(p);
+    }
+    if (skipped) notes.push(`${skipped} unsupported file${skipped > 1 ? 's' : ''} skipped`);
+    if (capped) notes.push(`stopped at ${MAX_BATCH_FILES} files / ${MAX_BATCH_BYTES / 1073741824} GB`);
+    setNotice(notes.length ? notes.join('. ') + '.' : undefined);
+    const news: Item[] = accepted.map(({ file, path }) => ({ id: `f${++uid}`, file, path, url: URL.createObjectURL(file) }));
     if (!news.length) return;
     setItems((p) => [...p, ...news]);
     setSelected((s) => s ?? news[0].id);
-    for (const n of news) {
+    for (const [i, n] of news.entries()) {
+      setProgress({ label: 'Scanning', done: i, total: news.length });
+      await tick();
       let patch: Partial<Item>;
       try {
-        const bytes = new Uint8Array(await n.file.arrayBuffer());
-        const analysis = await analyze(bytes, n.file.name);
-        patch = { bytes, analysis, thumbUrl: analysis.thumbnail ? URL.createObjectURL(new Blob([analysis.thumbnail.bytes as BlobPart], { type: 'image/jpeg' })) : undefined };
+        const analysis = await analyze(new Uint8Array(await n.file.arrayBuffer()), n.file.name);
+        patch = { analysis, thumbUrl: analysis.thumbnail ? URL.createObjectURL(new Blob([analysis.thumbnail.bytes as BlobPart], { type: 'image/jpeg' })) : undefined };
       } catch (e) { patch = { error: e instanceof Error ? e.message : 'Could not read this file.' }; }
       setItems((p) => p.map((x) => (x.id === n.id ? { ...x, ...patch } : x)));
     }
+    setProgress(undefined);
     setAnnounce(`${news.length} file${news.length > 1 ? 's' : ''} scanned.`);
   }, []);
 
-  const onDrop = (e: DragEvent) => { e.preventDefault(); setDrag(false); void addFiles([...e.dataTransfer.files]); };
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault(); setDrag(false);
+    const roots = entriesFromDrop(e.dataTransfer); // must happen synchronously
+    if (!roots.length) return;
+    setProgress({ label: 'Reading folder', done: 0, total: 0 });
+    void walk(roots).then(({ picked, skipped, capped }) => addFiles(picked, skipped, capped)).catch(() => { setProgress(undefined); setNotice('Could not read that folder.'); });
+  };
   useEffect(() => {
     const stop = (e: Event) => e.preventDefault();
     window.addEventListener('dragover', stop); window.addEventListener('drop', stop);
     return () => { window.removeEventListener('dragover', stop); window.removeEventListener('drop', stop); };
   }, []);
 
-  const loadSample = async () => { void addFiles(await makeSampleFiles()); };
-  const reset = () => { items.forEach((i) => { URL.revokeObjectURL(i.url); if (i.thumbUrl) URL.revokeObjectURL(i.thumbUrl); }); setItems([]); setSelected(undefined); };
+  const loadSample = async () => { void addFiles(fromInput(await makeSampleFiles())); };
+  const reset = () => { setSaved(undefined); setNotice(undefined); items.forEach((i) => { URL.revokeObjectURL(i.url); if (i.thumbUrl) URL.revokeObjectURL(i.thumbUrl); }); setItems([]); setSelected(undefined); };
 
   const ready = items.filter((i) => i.analysis);
   const allCleaned = ready.length > 0 && ready.every((i) => i.result);
   const cur = items.find((i) => i.id === selected) ?? items[0];
   const totalLeaks = ready.reduce((n, i) => n + i.analysis!.findings.filter((f) => f.label !== 'Orientation').length, 0);
 
+  const scores = ready.map((i) => (i.result ? i.result.after.score : i.analysis!.score));
+  const beforeBatch = batchScore(ready.map((i) => i.analysis!.score));
+  const afterBatch = allCleaned ? batchScore(scores) : undefined;
+  const anyShare = items.some((i) => i.mode === 'share');
+  const failed = items.filter((i) => i.cleanError);
+
   const download = (i: Item) => {
     if (!i.result) return;
-    const name = cleanName(i.file.name);
-    const go = () => saveBlob(new Blob([i.result!.bytes as BlobPart], { type: mimeFor(i.analysis!.format) }), name);
+    const name = i.outName!;
+    const go = () => saveBlob(new Blob([i.result!.bytes as BlobPart], { type: MIME[i.result!.outFormat] }), name);
     go(); setSaved({ name, again: go });
   };
   const downloadAll = (list: Item[]) => {
-    const go = () => saveBlob(zipFiles(list.filter((i) => i.result).map((i) => ({ name: cleanName(i.file.name), bytes: i.result!.bytes }))), 'hushprint-clean.zip');
+    const go = () => saveBlob(zipFiles(list.filter((i) => i.result).map((i) => ({ name: i.outName!, bytes: i.result!.bytes }))), 'hushprint-clean.zip');
     go(); setSaved({ name: 'hushprint-clean.zip', again: go });
   };
 
-  const runClean = async () => {
+  const runClean = async (mode: Mode) => {
     setBusy(true);
+    const share = mode === 'share';
+    const used = new Set<string>();
     const done: Item[] = [];
+    const todo = items.filter((i) => i.analysis).length;
+    let n = 0;
     for (const i of items) {
-      if (!i.bytes || !i.analysis) { done.push(i); continue; }
-      try { done.push({ ...i, result: i.result ?? await clean(i.bytes, i.file.name, { keepOrientation: keepRotation }) }); }
-      catch (e) { done.push({ ...i, error: e instanceof Error ? e.message : 'Cleaning failed.' }); }
+      if (!i.analysis) { done.push(i); continue; }
+      setProgress({ label: share ? 'Share-safe cleaning' : 'Cleaning', done: n++, total: todo });
+      await tick();
+      try {
+        const bytes = new Uint8Array(await i.file.arrayBuffer());
+        // share-safe drops the rotation tag too; when a photo is rotated that means baking it into the pixels (re-encode)
+        const result = i.result && i.mode === mode ? i.result : await clean(bytes, i.file.name, { keepOrientation: share ? false : keepRotation, rasterize: share || !keepRotation || i.analysis.format === 'heic' ? rasterize : undefined });
+        let outName = share ? randomName(result.outFormat) : cleanName(i.file.name, result.outFormat);
+        if (!share) { const dir = i.path.includes('/') ? i.path.replace(/\/[^/]*$/, '/') : ''; outName = safeZipPath(dir + outName); }
+        while (used.has(outName)) outName = outName.replace(/(-\d+)?(\.[^./]+)$/, (_, __, e) => `-${used.size + 1}${e}`);
+        used.add(outName);
+        done.push({ ...i, result, mode, outName, cleanError: undefined });
+      } catch (e) {
+        done.push({ ...i, result: undefined, cleanError: e instanceof NeedsReencode || e instanceof Error ? e.message : 'Cleaning failed.' });
+      }
     }
     setItems(done);
+    setProgress(undefined);
     setBusy(false);
     const ok = done.filter((i) => i.result);
-    setAnnounce(`Cleaned ${ok.length} file${ok.length === 1 ? '' : 's'}. Re-scan found no identifying data.`);
-    navigator.vibrate?.([14, 50, 22]); // light "done" haptic where supported (Android); silently ignored elsewhere
+    setAnnounce(`Cleaned ${ok.length} file${ok.length === 1 ? '' : 's'}. Re-scan done.`);
+    navigator.vibrate?.([14, 50, 22]);
     if (ok.length === 1) download(ok[0]); else if (ok.length > 1) downloadAll(ok);
   };
 
@@ -94,6 +149,13 @@ export function App() {
     <div className={`app${drag ? ' dragging' : ''}`} onDragOver={(e) => { e.preventDefault(); setDrag(true); }} onDragLeave={(e) => { if (e.currentTarget === e.target) setDrag(false); }} onDrop={onDrop}>
       <a className="skip" href="#main">Skip to content</a>
       <Header onProof={() => setProof(true)} />
+      {progress && (
+        <div className="progress" role="progressbar" aria-label={progress.label} aria-valuemin={0} aria-valuemax={progress.total || undefined} aria-valuenow={progress.total ? progress.done : undefined}>
+          <span className="bar"><span className="fill" style={{ width: progress.total ? `${Math.round((progress.done / progress.total) * 100)}%` : '12%' }} /></span>
+          <span className="plabel">{progress.label}{progress.total ? ` ${Math.min(progress.done + 1, progress.total)} of ${progress.total}` : '…'}</span>
+        </div>
+      )}
+      {notice && <p className="notice" role="status">{notice} <button className="link inline" onClick={() => setNotice(undefined)}>Dismiss</button></p>}
       <main id="main" className={items.length ? 'loaded' : 'empty'}>
         {!items.length ? (
           <Empty onPick={() => input.current?.click()} onSample={loadSample} />
@@ -102,25 +164,25 @@ export function App() {
             <aside className="rail" aria-label="Files">
               <div className="rail-head">
                 <h2>Files <span className="count">{items.length}</span>{items.length > 1 && <span className="swipe">swipe {'\u2192'}</span>}</h2>
-                <button className="link" onClick={() => input.current?.click()}>+ Add</button>
+                <span className="rail-add"><button className="link" onClick={() => input.current?.click()}>+ Files</button><button className="link" onClick={() => folderInput.current?.click()}>+ Folder</button></span>
               </div>
               <ul className="files">
                 {items.map((i) => (
                   <li key={i.id}>
                     <button className={`file${i.id === cur?.id ? ' on' : ''}`} onClick={() => setSelected(i.id)} aria-current={i.id === cur?.id}>
-                      <img src={i.url} alt="" className="fthumb" />
+                      {i.analysis && isPreviewable(i.analysis.format) ? <img src={i.url} alt="" className="fthumb" loading="lazy" decoding="async" /> : <span className="fthumb tile" aria-hidden="true">{i.analysis ? FORMAT_LABEL[i.analysis.format].slice(0, 4) : '···'}</span>}
                       <span className="fmeta">
                         <span className="fname">{i.file.name}</span>
-                        <span className="fsub">{kb(i.file.size)}{i.result ? ` → ${kb(i.result.bytes.length)}` : ''}</span>
+                        <span className="fsub">{kb(i.file.size)}{i.result ? ` → ${kb(i.result.bytes.length)}` : ''}{i.analysis ? ` · ${i.result ? i.result.after.score : i.analysis.score}/100` : ''}</span>
                       </span>
-                      {i.error ? <span className="sev sev-high">Can&rsquo;t read</span> : !i.analysis ? <span className="sev sev-info">Scanning</span>
-                        : i.result ? <span className="sev sev-clean"><span aria-hidden="true">{'✓'}</span> Clean</span> : <Sev level={i.analysis.risk.level} />}
+                      {i.error || i.cleanError ? <span className="sev sev-high">{i.cleanError ? 'Not cleaned' : 'Can\u2019t read'}</span> : !i.analysis ? <span className="sev sev-info">Scanning</span>
+                        : i.result ? <span className={`sev ${i.result.remaining.length ? 'sev-medium' : 'sev-clean'}`}><span aria-hidden="true">{i.result.remaining.length ? '!' : '✓'}</span> {i.result.remaining.length ? 'Partial' : 'Clean'}</span> : <Sev level={i.analysis.risk.level} />}
                     </button>
                   </li>
                 ))}
               </ul>
               <div className="settings">
-                <label className="check"><input type="checkbox" checked={keepRotation} disabled={allCleaned} onChange={(e) => setKeepRotation(e.target.checked)} /> Keep photo rotation <span className="hint">(recommended)</span></label>
+                <label className="check"><input type="checkbox" checked={keepRotation} disabled={allCleaned} onChange={(e) => setKeepRotation(e.target.checked)} /> Keep photo rotation tag <span className="hint">(recommended; off = rotate the pixels for real, which re-encodes rotated images)</span></label>
               </div>
               <button className="link subtle" onClick={reset}>Remove all &amp; start over</button>
             </aside>
@@ -135,27 +197,25 @@ export function App() {
         <div className="actionbar">
           <div className="ab-inner">
             <div className="ab-info">
-              <strong>{allCleaned ? 'All clean' : `${totalLeaks} leak${totalLeaks === 1 ? '' : 's'} found`}</strong>
-{allCleaned && saved
+              <strong>{allCleaned ? (failed.length ? 'Cleaned, with caveats' : 'All clean') : `${totalLeaks} leak${totalLeaks === 1 ? '' : 's'} found`}</strong>
+              {beforeBatch !== undefined && <ScoreLine before={beforeBatch} after={afterBatch} batch={ready.length > 1} />}
+              {allCleaned && saved
                 ? <span className="saved"><span aria-hidden="true">{'\u2713'}</span> Saved<span className="sname"> {saved.name}</span> <button className="link inline" onClick={saved.again}>Download again</button></span>
-                : <span>{ready.length} file{ready.length === 1 ? '' : 's'} stays on this device</span>}
+                : <span>{ready.length} file{ready.length === 1 ? '' : 's'} stay{ready.length === 1 ? 's' : ''} on this device</span>}
             </div>
-            {allCleaned ? (
-              <div className="ab-btns">
-                {cur?.result && ready.length > 1 && <button className="btn ghost" onClick={() => download(cur)}>This file</button>}
-                <button className="btn primary" onClick={() => (ready.length > 1 ? downloadAll(ready) : download(ready[0]))}>
-                  {ready.length > 1 ? `Download all (${ready.length}) .zip` : 'Download clean copy'}
-                </button>
-              </div>
-            ) : (
-              <button className="btn primary" disabled={busy || !ready.length} onClick={() => void runClean()}>{busy ? 'Cleaning…' : `Clean & download${ready.length > 1 ? ` (${ready.length})` : ''}`}</button>
-            )}
+            <div className="ab-btns">
+              {allCleaned && cur?.result && ready.length > 1 && <button className="btn ghost" onClick={() => download(cur)}>This file</button>}
+              {allCleaned && <button className="btn primary" onClick={() => (ready.length > 1 ? downloadAll(ready) : download(ready[0]))}>{ready.length > 1 ? `Download all (${ready.length}) .zip` : 'Download clean copy'}</button>}
+              {!allCleaned && <button className="btn primary" disabled={busy || !ready.length} onClick={() => void runClean('normal')}>{busy ? 'Cleaning…' : `Clean & download${ready.length > 1 ? ` (${ready.length})` : ''}`}</button>}
+              {(!allCleaned || !anyShare) && <button className="btn ghost share" disabled={busy || !ready.length} onClick={() => void runClean('share')} title="Strips everything including the rotation tag, and gives every file a random name">Share-safe</button>}
+            </div>
           </div>
         </div>
       )}
 
       <Footer />
-      <input ref={input} type="file" accept="image/jpeg,image/png,.jpg,.jpeg,.png" multiple hidden onChange={(e) => { void addFiles([...(e.target.files ?? [])]); e.target.value = ''; }} />
+      <input ref={input} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,video/mp4,video/quicktime,.jpg,.jpeg,.png,.webp,.heic,.heif,.pdf,.docx,.xlsx,.pptx,.mp4,.mov,.m4v" multiple hidden onChange={(e) => { void addFiles(fromInput([...(e.target.files ?? [])])); e.target.value = ''; }} />
+      <input ref={folderInput} type="file" multiple hidden {...{ webkitdirectory: '' }} onChange={(e) => { const all = [...(e.target.files ?? [])]; const ok = all.filter((f) => EXTENSIONS.test(f.name)); void addFiles(fromInput(ok), all.length - ok.length); e.target.value = ''; }} />
       <div className="sr" role="status" aria-live="polite">{announce}</div>
       {drag && <div className="dropveil" aria-hidden="true"><span>Drop to scan. Nothing is uploaded.</span></div>}
       {proof && <Proof onClose={() => setProof(false)} />}
@@ -164,6 +224,13 @@ export function App() {
 }
 
 /* ------------------------------------------------------------------ */
+
+const ScoreLine = ({ before, after, batch }: { before: number; after?: number; batch: boolean }) => (
+  <span className="scoreline" aria-label={`${batch ? 'Batch privacy score' : 'Privacy score'} ${before}${after !== undefined ? ` to ${after}` : ''} out of 100`}>
+    {batch ? 'Batch score' : 'Privacy score'} <b className={`band-${scoreBand(before)}`}>{before}</b>
+    {after !== undefined && <> <span aria-hidden="true">{'\u2192'}</span> <b className={`band-${scoreBand(after)}`}>{after}</b></>}<span className="of">/100</span>
+  </span>
+);
 
 function Header({ onProof }: { onProof: () => void }) {
   return (
@@ -183,16 +250,17 @@ function Empty({ onPick, onSample }: { onPick: () => void; onSample: () => void 
   return (
     <div className="hero">
       <div className="hero-main">
-        <p className="eyebrow">Photo privacy check</p>
+        <p className="eyebrow">File privacy check {'·'} v2</p>
         <h1>Your photos talk.<br /><em>Make them hush.</em></h1>
-        <p className="lede">Every photo you post can carry the GPS spot you stood on, your phone&rsquo;s serial number, the second you took it, and a hidden copy of whatever you cropped out. Drop a photo to see exactly what it gives away, then wipe it.</p>
+        <p className="steps" aria-label="How it works"><b>Drop</b> {'·'} <b>See</b> {'·'} <b>Clean</b></p>
+        <p className="lede">Every photo, PDF, Office file and video you share can carry the GPS spot you stood on, your phone&rsquo;s serial number, the author&rsquo;s name, the second it was made, and a hidden copy of whatever you cropped out. Drop it in to see exactly what it gives away, then wipe it.</p>
         <button className="drop" onClick={onPick} aria-label="Choose photos to scan. You can also drag and drop files here.">
           <span className="corners" aria-hidden="true" />
-          <span className="drop-title">Drop photos here</span>
-          <span className="drop-sub">or tap to choose from your library {'·'} JPEG &amp; PNG {'·'} batch OK</span>
+          <span className="drop-title">Drop files or a whole folder</span>
+          <span className="drop-sub">or tap to choose from your library {'·'} photos, PDF, Office, video {'·'} folders OK</span>
         </button>
         <div className="hero-actions">
-          <button className="btn primary" onClick={onPick}>Choose photos</button>
+          <button className="btn primary" onClick={onPick}>Choose files</button>
           <button className="btn ghost" onClick={onSample}>Try a sample with GPS</button>
         </div>
         <p className="fine">Files are read in your browser and never sent anywhere. The page&rsquo;s security policy forbids network requests entirely.</p>
@@ -234,17 +302,22 @@ function Report({ item }: { item: Item }) {
     <>
       <div className={`verdict ${done ? 'sev-bg-clean' : `sev-bg-${a.risk.level}`}`}>
         <div className="v-head">
-          <p className="eyebrow">{a.name} {'·'} {a.format.toUpperCase()} {'·'} {a.width}&times;{a.height} {'·'} {kb(a.size)}</p>
-          {done ? <span className="sev sev-clean big"><span aria-hidden="true">{'✓'}</span> Clean</span> : <Sev level={a.risk.level} big />}
+          <p className="eyebrow">{a.name} {'·'} {FORMAT_LABEL[a.format]}{a.detail ? ` · ${a.detail}` : ''}{a.width ? ` · ${a.width}\u00d7${a.height}` : ''} {'·'} {kb(a.size)}</p>
+          {done ? (item.result!.remaining.length ? <span className="sev sev-medium big"><span aria-hidden="true">!</span> Partly clean</span> : <span className="sev sev-clean big"><span aria-hidden="true">{'✓'}</span> Clean</span>) : <Sev level={a.risk.level} big />}
         </div>
-        <h2>{done ? 'Clean. Nothing identifying is left in this file.' : a.risk.headline}</h2>
+        <div className="scorebox" role="group" aria-label="Privacy score">
+          <span className={`scorenum band-${scoreBand(done ? item.result!.after.score : a.score)}`}>{done ? item.result!.after.score : a.score}<small>/100</small></span>
+          <span className="scoretxt">Privacy score{done && <> {'·'} was <b>{a.score}</b></>}<br /><em>{BAND_LABEL[scoreBand(done ? item.result!.after.score : a.score)]}</em></span>
+        </div>
+        <h2>{done ? (item.result!.remaining.length ? `Cleaned. ${item.result!.remaining.length} thing${item.result!.remaining.length > 1 ? 's' : ''} Hushprint cannot remove.` : 'Clean. Nothing identifying is left in this file.') : a.risk.headline}</h2>
         {!done && a.risk.bullets.length > 0 && <ul className="bullets">{a.risk.bullets.map((b) => <li key={b}>{b}</li>)}</ul>}
         {!done && counts.length > 0 && <p className="counts">{counts.map(([s, n]) => <span key={s} className={`c-${s}`}>{n} {s}</span>)}</p>}
         {done && item.result && <Verified r={item.result} />}
         {a.warnings.length > 0 && <p className="warn">{a.warnings.join(' ')}</p>}
       </div>
 
-      {!folded && (a.gps || a.thumbnail) && (
+      {item.cleanError && <div className="verdict sev-bg-high"><h2>Not cleaned.</h2><p className="lede">{item.cleanError}</p></div>}
+      {!folded && (a.gps || (a.thumbnail && isPreviewable(a.format))) && (
         <div className="panels">
           {a.gps && (
             <div className={`panel map-panel${done ? ' removed' : ''}`}>
@@ -257,7 +330,7 @@ function Report({ item }: { item: Item }) {
               <p className="sub">{done ? 'Not present in the clean copy.' : ''}{!done && a.gps.nearest[0] ? `${formatDistance(a.gps.nearest[0].km)} from ${a.gps.nearest[0].name}. ` : ''}{!done && (a.gps.accuracyM ? `Accurate to about ${Math.round(a.gps.accuracyM)} m.` : 'Phone GPS is typically accurate to a few metres: enough to pick out one house.')}</p>
             </div>
           )}
-          {a.thumbnail && (
+          {a.thumbnail && isPreviewable(a.format) && (
             <div className={`panel thumb-panel${done ? ' removed' : ''}`}>
               <h3>Hidden preview {done && <span className="tag-clean">removed</span>}</h3>
               <div className="compare">
@@ -296,19 +369,30 @@ function Row({ f, i }: { f: Finding; i: number }) {
       <dt><span className={`dotsev d-${f.severity}`} aria-label={SEV_LABEL[f.severity]} title={SEV_LABEL[f.severity]} />{f.label}</dt>
       <dd>
         <span className="val"><span className="txt">{f.value}</span><span className="gone" aria-hidden="true">removed</span></span>
-        <span className="why">{f.why} <span className="src">{f.source}</span></span>
+        <span className="why">{f.why} <span className="src">{f.source}</span>{f.removable === false && <span className="stuck"> not removable by Hushprint</span>}</span>
       </dd>
     </div>
   );
 }
 
+const CONTENT: Record<string, string> = { pdf: 'Every page, font and image', docx: 'Document body and media', xlsx: 'Sheets and media', pptx: 'Slides and media', mp4: 'Audio and video streams', webp: 'Pixels', png: 'Pixels', jpeg: 'Pixels', heic: 'Pixels' };
 function Verified({ r }: { r: CleanResult }) {
+  const f = r.before.format;
   return (
-    <ul className="proof-list">
-      <li><b>{r.removed.length}</b> fields removed, re-scanned: <b>{r.after.findings.filter((f) => f.label !== 'Orientation').length}</b> remain</li>
-      <li>Pixels {r.pixelsIdentical ? <b>byte-identical</b> : <b className="bad">changed</b>} (no re-compression, no quality loss)</li>
-      <li>Rotation {r.orientationKept > 1 ? <b>kept</b> : 'not needed'} {'·'} {kb(r.before.size)} {'→'} {kb(r.bytes.length)}</li>
-    </ul>
+    <>
+      <ul className="proof-list">
+        <li><b>{r.removed.length}</b> fields removed, re-scanned: <b>{r.after.findings.filter((x) => x.label !== 'Orientation' && x.removable !== false).length}</b> removable ones remain</li>
+        {r.reencoded
+          ? <li className="warnline"><b>Re-encoded.</b> {f === 'heic' ? 'HEIC was decoded and saved again as JPEG, so the pixels are not byte-identical and colours are converted to sRGB.' : 'The rotation was baked into the pixels, so the image was decoded and saved again (not byte-identical).'}</li>
+          : <li>{CONTENT[f]} {r.pixelsIdentical ? <b>byte-identical</b> : <b className="bad">changed</b>} (no re-compression, no quality loss)</li>}
+        <li>{r.orientationKept > 1 ? 'Rotation tag kept' : 'No rotation tag left'} {'·'} {kb(r.before.size)} {'→'} {kb(r.bytes.length)}</li>
+      </ul>
+      {r.remaining.length > 0 && (
+        <div className="caveats"><b>Still in the file (Hushprint cannot remove these):</b>
+          <ul>{r.remaining.map((x) => <li key={x.id}>{x.label}: {x.value}</li>)}</ul>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -332,7 +416,7 @@ function Diff({ r }: { r: CleanResult }) {
 function Footer() {
   return (
     <footer className="foot">
-      <p><b>Honest limits.</b> Hushprint removes metadata from the file, not what is visible in the picture (faces, street signs, reflections). JPEG and PNG only for now. HEIC, PDF and DOCX are on the roadmap.</p>
+      <p><b>Honest limits.</b> Hushprint removes metadata from the file, not what is visible in the picture, page or video (faces, street signs, reflections, text). HEIC export re-encodes to JPEG. Some PDF and video leaks are shown but cannot be removed losslessly.</p>
     </footer>
   );
 }
