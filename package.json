@@ -1,0 +1,55 @@
+{
+  "name": "hushprint",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Hushprint: see exactly what hidden data your photos leak (GPS, device serials, hidden thumbnails), then strip it. 100% in-browser, zero uploads, hand-written JPEG/PNG/EXIF/XMP engine.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "gen:landmask": "node scripts/gen-landmask.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/bricolage-grotesque": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "topojson-client": "^3.1.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.1.0",
+    "world-atlas": "^2.0.2"
+  },
+  "keywords": [
+    "privacy",
+    "exif",
+    "metadata",
+    "gps",
+    "photo-privacy",
+    "exif-remover",
+    "metadata-stripper",
+    "jpeg",
+    "png",
+    "xmp",
+    "security",
+    "client-side",
+    "offline",
+    "local-first",
+    "typescript",
+    "react",
+    "vite",
+    "csp",
+    "osint",
+    "aCropalypse"
+  ],
+  "license": "MIT"
+}
