@@ -1,111 +1,111 @@
 # Hushprint
 
-**Your photos know where you live. Hushprint shows you what they're saying, then makes them hush.**
+**Your files talk. Make them hush.** See the GPS spot, author name, device serial and hidden thumbnail inside a photo, PDF, Office file or video, then strip them. In your browser. Offline. Nothing is uploaded, and the page is not even allowed to make a network request.
+
+**Drop · See · Clean**
 
 | What's leaking | After "Clean & download" |
 |---|---|
-| ![Report with GPS findings](docs/desktop-loaded.png) | ![Verified clean](docs/desktop-cleaned.png) |
+| ![Report with a privacy score of 30 for a PDF, listing author and software](docs/report.png) | ![Verified clean: score 100, before/after table](docs/cleaned.png) |
 
-**Drop** a photo. **See** the GPS spot, phone, serial number and hidden thumbnail inside it. **Clean** it in one tap, and check the proof. It all happens in your browser: nothing is uploaded, and the page is not even allowed to make a network request.
+## Quick start
 
 ```bash
 npm install
-npm run dev     # then open http://localhost:5173 and click "Try a sample with GPS"
-npm test        # 25 tests
+npm run dev          # open http://localhost:5173, click "Try a sample with GPS"
+npm test             # 116 tests, including fuzzing
+npm run build        # typecheck + production build (strict CSP + offline service worker)
 ```
 
-Mobile views: [empty](docs/mobile-empty.png), [report](docs/mobile-loaded.png), [cleaned](docs/mobile-cleaned.png).
+Command line, same engine (Node 22.18+):
 
-## Who it's for
+```bash
+node bin/hushprint.mjs scan  photo.jpg report.pdf          # findings + privacy score
+node bin/hushprint.mjs clean ./trip --out ./safe           # whole folder, never overwrites
+node bin/hushprint.mjs clean ./trip --share-safe           # random output names
+```
 
-Anyone who posts or sends photos: selling things online, listing a room, sharing pictures of kids, a pet, a new apartment, or a first apartment you do not want a stranger to find. A phone photo can carry coordinates accurate to a few metres. If you took it at home, you just handed over your address. Most people have no idea, and most "remove EXIF" tools either upload your file to a server or silently do something you cannot check.
+## What's new in v2
 
-## What it shows you
+- **More than photos.** WebP, HEIC, PDF, DOCX/XLSX/PPTX and MP4/MOV, on top of JPEG and PNG.
+- **Privacy score** from 0 to 100 per file and per batch (the batch is only as private as its worst file). It is a transparent heuristic: capped penalties per severity, and GPS coordinates cap the score at 25. See [`src/engine/score.ts`](src/engine/score.ts).
+- **Share-safe mode**, one tap: strips everything including the rotation tag and renames every file to a random `hp-<12 hex>` name, so the filename cannot leak either.
+- **Drag a folder** to batch-clean it, with a progress bar. Subfolders are kept inside the ZIP; unsupported files are skipped and counted.
+- **Installable and offline.** A small service worker caches the app shell. It never sees your files.
+- **CLI** (`hushprint scan|clean`) on the same engine.
+- **Hardened parsers.** Every allocation is capped, decompression bombs are cut off at a few MB, and every parser is fuzzed. Trusted Types is enforced. See [SECURITY.md](SECURITY.md) and [THREAT_MODEL.md](THREAT_MODEL.md).
+- **Honest caveats.** Leaks the tool can see but cannot remove losslessly are listed after cleaning ("Partly clean"), never hidden behind a green tick.
 
-- **Where**: GPS latitude/longitude, altitude, heading. Drawn on an offline dot-matrix world map plus a local radar showing the nearest cities, to scale.
-- **What and who**: camera/phone make and model, lens, body and lens **serial numbers**, owner name, artist, copyright, face-tag names, photographer fields.
-- **When**: capture time, GPS clock, timezone offset, last-modified time.
-- **Leftovers**: the **embedded EXIF thumbnail**, shown side by side with the photo (flagged if its shape differs, i.e. it predates your crop), plus bytes hidden after the image ends (the "aCropalypse" class of bug, and hidden second JPEGs).
-- **Notes**: captions, keywords, comments, AI-generator prompts saved in PNGs, editing software.
+## Supported formats
 
-Each finding comes with a severity (critical, high, medium, low), a plain-English reason, and the container it came from (`EXIF GPS`, `XMP`, `IPTC`, `PNG text`...).
+| Format | Reads | Removes | How |
+|---|---|---|---|
+| JPEG | EXIF (GPS, device, serials, thumbnail), XMP, IPTC, comments, data after the image | All of it | Segments dropped, pixels never touched |
+| PNG | tEXt/zTXt/iTXt (incl. AI prompts), eXIf, XMP, tIME, data after IEND | All of it | Chunks dropped, IDAT copied byte for byte |
+| WebP | EXIF and XMP chunks, data after the RIFF | All of it | Chunks dropped, VP8X flags and RIFF size rewritten |
+| HEIC / HEIF | EXIF and XMP items from the ISO-BMFF boxes | **Re-encodes** to JPEG (canvas) | Not lossless: pixels are decoded and saved again, colours go to sRGB. Needs a browser that can open HEIC (Safari). The CLI can scan HEIC but not clean it |
+| PDF | Info dictionary, XMP, embedded-photo GPS, earlier saved versions, bytes after `%%EOF` | Info dict and XMP (also Flate-compressed XMP) | Blanked **in place, same file length**, so xref offsets stay valid |
+| DOCX / XLSX / PPTX | `docProps` core, app and custom (author, last modified by, company, manager, template, revision, labels), thumbnail, comment and tracked-change authors, Excel saved paths | `docProps` and the thumbnail | Zip rewritten; other parts keep their compressed bytes; entry timestamps reset to 1980 |
+| MP4 / MOV | GPS (`©xyz`, QuickTime `ISO6709`), make, model, software, dates, titles, XMP, timed-metadata tracks | Tag boxes and header timestamps | Boxes renamed `free` and zero-filled in place; audio/video samples untouched |
+
+Every clean copy is parsed again with the same engine. The UI shows what was removed, what remains, and whether the content (pixels, pages, media samples) is byte-identical.
 
 ## How it works
 
-All of it is hand-written TypeScript in [`src/engine`](src/engine), with no parsing libraries.
+All of it is hand-written TypeScript in [`src/engine`](src/engine), with no parsing libraries: a JPEG marker walker, PNG and RIFF chunk readers, a TIFF/EXIF reader, an ISO-BMFF box walker (HEIC, MP4), a tolerant PDF object scanner, and a bounded ZIP reader/rewriter.
 
 <details>
-<summary>Engine internals (for the curious)</summary>
+<summary>Engine map</summary>
 
-| Piece | What it does |
+| File | Job |
 |---|---|
-| `jpeg.ts` | Marker-level walker. Handles byte-stuffing, RST markers, progressive scans, EOI. Reads APP1 EXIF, XMP, APP13 IPTC, COM. Rebuilds the file keeping only what is needed to display it. |
-| `tiff.ts` | EXIF/TIFF reader (both byte orders, IFD0, Exif, GPS, thumbnail IFD, loop and bounds guards) and a writer used to build test fixtures. |
-| `png.ts` | Chunk parser with CRC checks. Reads tEXt/zTXt/iTXt/eXIf/tIME. Keeps only chunks that affect rendering (incl. APNG), drops everything else and anything after IEND. |
-| `analyze.ts` | Turns raw tags into findings, severities and the plain-English risk summary. Runs strip, then **re-parses the output** to verify. |
-| `zip.ts` | Tiny ZIP writer for "download all". |
+| `jpeg.ts` `png.ts` `webp.ts` | Container parsers and lossless strippers |
+| `tiff.ts` | EXIF reader/writer, loop and bounds guards, work budget |
+| `isobmff.ts` `heic.ts` `mp4.ts` | Box walker, HEIC item extraction, video metadata and in-place stripper |
+| `pdf.ts` | Object scanner, Info and XMP finder, in-place blanking, stored-zlib blanking for compressed XMP |
+| `zip.ts` `office.ts` | Bounded ZIP reader and rewriter, Office properties |
+| `analyze.ts` `findings.ts` | Findings, risk text, `analyze()` and `clean()` with verification |
+| `score.ts` `names.ts` `limits.ts` | Privacy score, random names, every size cap in one file |
 
 </details>
 
-**Stripping is lossless.** The pixel stream is never decoded or re-compressed, so there is no quality loss. A CRC over the pixel data before and after proves it (`Pixels byte-identical` in the UI).
+## Privacy and security
 
-**Rotation is preserved.** Phones store "rotate 90 degrees" as an EXIF tag. Instead of deleting it and leaving your photo sideways, Hushprint keeps a single 1-field Orientation tag (toggle with *Keep rotation*).
-
-**Verify-after-strip.** Every clean copy is analysed again with the same engine. The UI reports `fields removed, re-scanned: 0 remain` and shows a before/after table. If anything survives, it says so.
-
-## Privacy, and how to check it
-
-- Files are read with the File API and processed in tab memory. No server exists.
-- The production build ships a Content-Security-Policy with **`connect-src 'none'`**: the browser itself blocks every fetch, XHR, WebSocket and beacon. Scripts, styles, fonts and images are same-origin only. No analytics, no CDN fonts, no map tiles.
-- *Prove it* in the header opens a panel with the live policy and a button that tries to send a request. The browser refuses it and reports the violated directive.
-- Check yourself: DevTools > Network, then clean a photo. Zero requests.
-- Playwright run of the full flow (scan, clean, download) recorded **0 external requests and 0 CSP violations**.
-- [`vercel.json`](vercel.json) carries the same policy as a response header for hosting (not deployed).
+- Files are read with the File API and processed in tab memory. Nothing is stored: no IndexedDB, no localStorage, no cache of your files.
+- The page ships `connect-src 'none'`, `default-src 'none'`, no inline script, **Trusted Types enforced**, and no `innerHTML` anywhere in the code (a test fails the build if one appears). File text is only ever rendered as text.
+- The service worker has its own tiny policy (`connect-src 'self'`) because it needs `fetch` to fill its cache. It ignores cross-origin requests and never receives file data.
+- *Prove it* in the header shows the live policy and tries to send a request; the browser refuses it.
+- The production build was exercised in Chromium with the real response headers (`scripts/serve-prod.mjs`): **0 external requests, 0 CSP violations**, offline reload works, and a JPEG whose metadata contains `<img onerror>` and `<script>` renders as plain text.
+- Fuzzing covers every parser (mutation, truncation, hostile length fields, decompression bombs) in `tests/fuzz.test.ts`. `npm audit` reports 0 vulnerabilities.
 
 ## Honest limits
 
-- **JPEG and PNG only** in this version. HEIC, WebP, PDF and DOCX are not supported (see roadmap). On iPhone: Settings > Camera > Formats > *Most Compatible*, or share as JPEG.
-- It removes **metadata**, not what is visible in the picture: faces, street signs, house numbers, reflections.
-- Embedded ICC colour profiles are kept so colours stay correct; they hold no personal data.
-- Appended extra images (HDR gain maps, motion-photo video) are removed along with other trailing data. The photo still displays, but loses those extras.
-- The risk wording is a heuristic. "Reveals where you live" assumes the photo was taken at home; the tool cannot know.
-- Nearest-city distances use a small built-in list of ~70 cities, not a full gazetteer.
-- Not a forensic guarantee against techniques outside the file itself (sensor noise fingerprints, filename, filesystem timestamps).
-
-## All commands
-
-```bash
-npm run dev       # dev server (no CSP in dev; it is injected in production builds)
-npm test          # parsers, strippers, round trips, fuzzing, zip
-npm run build     # typecheck + production build into dist/
-npm run preview   # serve the build with the strict CSP
-```
-
-Fixtures are generated in code; no copyrighted images. Screenshots: `npm run build && npx vite preview --port 4173`, then `PLAYWRIGHT_PATH=... node scripts/screenshots.mjs`.
-
-## Tests
-
-`tests/engine.test.ts` builds JPEGs and PNGs programmatically with known metadata and checks:
-
-- EXIF round trips in both byte orders; GPS sign handling; truncated and looping IFDs.
-- Findings for GPS, serials, owner, XMP face names, IPTC, comments, mismatched thumbnails, data after EOI/IEND.
-- After cleaning: none of the planted strings exist anywhere in the output bytes, re-scan is empty, pixel digest is identical, orientation is kept, cleaning is idempotent, and PNGs still decode with valid CRCs.
-- 400 mutated/truncated files never produce anything but a clean parse error.
+- It removes **metadata**, not what is visible: faces, street signs, house numbers, reflections, text on a page.
+- **HEIC export and baked-in rotation re-encode** the image (lossy, sRGB). The engine path is unit-tested with an injected re-encoder; the real canvas path depends on your browser's decoder and was not exercised for HEIC here (headless Chromium cannot open HEIC).
+- **PDF**: Info and XMP are removed. Not removed, but reported: Info stored inside a compressed object stream, earlier saved revisions, annotation and form-field authors, embedded images' own metadata, encrypted files (refused).
+- **Office**: `docProps` and the thumbnail are removed. Tracked-change and comment authors, hidden sheets and Excel saved paths are reported, not removed. Output was checked with our own parser, Python's zipfile and macOS `textutil`, **not with Microsoft Office**.
+- **Video**: timed-metadata tracks (action cams, dashcams) can hold per-second GPS and are reported, not removed. Streams are never re-encoded, so a video with a leak in another container is not fixed.
+- Files over 256 MB are refused; a batch is capped at 500 files / 1 GB. Parsing runs on the main thread (a Web Worker is on the roadmap).
+- The score and the plain-English risk text are heuristics. "Reveals where you live" assumes the file was made at home.
+- Nearest-city distances use a built-in list of about 70 cities.
+- Not a forensic guarantee against anything outside the file: sensor noise, writing style, filesystem timestamps.
+- Not audited by a third party.
 
 ## Roadmap
 
-1. HEIC/HEIF (in-place neutralise the Exif item) and WebP.
-2. PDF (Info dict and XMP) and DOCX/XLSX/PPTX (`docProps`, document thumbnail).
-3. CLI sharing the same engine for files on disk.
-4. Installable PWA for fully offline use.
-5. Optional redaction view for faces and text in the visible image.
+1. Run parsing in a Web Worker so huge batches never block the page.
+2. PDF object-stream rewrite (qpdf-style) to clear Info that lives in compressed streams, and annotation authors.
+3. Lossless JPEG rotation (DCT block transform) so Share-safe can drop the rotation tag without re-encoding.
+4. Web Share Target, so the OS share sheet can hand files straight to Hushprint.
+5. AVIF, GIF and TIFF; Office tracked-change cleaning.
+6. Optional redaction view for faces and text in the visible image.
 
 ## Stack
 
-Vite, React, TypeScript, Vitest. Fonts (Bricolage Grotesque, JetBrains Mono) are bundled locally.
+Vite, React, TypeScript, Vitest. Fonts (Bricolage Grotesque, JetBrains Mono) are bundled locally. MIT licensed.
 
 ---
 
-**Repo description:** See exactly what hidden data your photos leak (GPS, device serials, hidden thumbnails), then strip it. 100% in-browser, zero uploads, hand-written JPEG/PNG/EXIF/XMP engine.
+**Repo description:** See what hidden data your photos, PDFs, Office files and videos leak (GPS, author names, serials, thumbnails), then strip it. 100% in-browser, offline, zero uploads, hand-written parsers.
 
-**Topics:** `privacy` `exif` `metadata` `gps` `photo-privacy` `exif-remover` `metadata-stripper` `jpeg` `png` `xmp` `client-side` `local-first` `csp` `typescript` `react` `vite`
+**Topics:** `privacy` `exif` `metadata` `metadata-stripper` `gps` `photo-privacy` `pdf` `docx` `heic` `webp` `mp4` `pwa` `cli` `offline-first` `local-first` `csp` `trusted-types` `typescript` `react` `vite`
