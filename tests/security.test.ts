@@ -43,3 +43,12 @@ describe('Content-Security-Policy', () => {
     expect(readFileSync(join(root, 'sw', 'sw.js'), 'utf8')).toMatch(/origin !== self\.location\.origin\) return/);
   });
 });
+
+describe('web UI fails closed on verification', () => {
+  it('rejects an unverified clean result before it can be stamped or downloaded', () => {
+    const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+    const gate = app.indexOf('if (!result.verified) throw');
+    expect(gate).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(app.indexOf('done.push({ ...i, result, mode, outName'));
+  });
+});

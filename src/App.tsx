@@ -141,6 +141,8 @@ export function App() {
         const bytes = new Uint8Array(await i.file.arrayBuffer());
         // share-safe drops the rotation tag too; when a photo is rotated that means baking it into the pixels (re-encode)
         const result = i.result && i.mode === mode ? i.result : await clean(bytes, i.file.name, { keepOrientation: share ? false : keepRotation, rasterize: share || !keepRotation || i.analysis.format === 'heic' ? rasterize : undefined });
+        // same rule as the CLI: a copy that failed its re-scan is never stamped clean or downloaded
+        if (!result.verified) throw new Error('Verification failed: the cleaned copy still has removable metadata or its content changed, so Hushprint did not save it.');
         let outName = share ? randomName(result.outFormat) : cleanName(i.file.name, result.outFormat);
         if (!share) { const dir = i.path.includes('/') ? i.path.replace(/\/[^/]*$/, '/') : ''; outName = safeZipPath(dir + outName); }
         while (used.has(outName)) outName = outName.replace(/(-\d+)?(\.[^./]+)$/, (_, __, e) => `-${used.size + 1}${e}`);
