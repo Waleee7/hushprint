@@ -26,7 +26,7 @@ What counts as a vulnerability here:
 | Hard caps on every allocation and loop driven by file content | `src/engine/limits.ts` |
 | Bounded decompression: output is read in chunks and cancelled at the cap, so a zip/deflate bomb costs at most a few MB | `inflate()` in `src/engine/bytes.ts` |
 | Fuzzing: mutated and truncated inputs for every parser, plus hostile size fields | `tests/fuzz.test.ts` |
-| Dependencies: Four runtime packages (React, ReactDOM and two font packages). `npm audit` is clean at the time of writing and runs in CI | `.github/workflows/ci.yml` |
+| Dependencies: Five runtime packages (React, ReactDOM and three font packages). `npm audit` is clean at the time of writing and runs in CI | `.github/workflows/ci.yml` |
 | CLI: file-derived text is escaped before it reaches a terminal (controls, C1, bidi), symlinks are never followed, files are opened with `O_NOFOLLOW` and size-checked on the open handle, run totals are capped, and an unverified copy is never written as clean | `src/cli.ts`, `tests/cli.test.ts` |
 | Outputs are re-parsed and verified before they are offered | `clean()` in `src/engine/analyze.ts` |
 

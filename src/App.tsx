@@ -27,6 +27,14 @@ const Sev = ({ level, big }: { level: Severity; big?: boolean }) => (
   <span className={`sev sev-${level}${big ? ' big' : ''}`}><span aria-hidden="true">{SEV_GLYPH[level]}</span> {SEV_LABEL[level]}</span>
 );
 
+/** A hand-drawn grease-pencil loop. Sits over its positioned parent and overshoots it a little. */
+export const Scribble = ({ className = '' }: { className?: string }) => (
+  <svg className={`scribble ${className}`} viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M46 7 C 78 2, 98 24, 95 52 C 92 80, 62 98, 34 93 C 8 88, 1 60, 6 38 C 11 16, 38 4, 68 10" />
+  </svg>
+);
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
 let uid = 0;
 /** True on phone-width screens. Decides how many categories show before "See all". */
 const useNarrow = () => {
@@ -169,13 +177,15 @@ export function App() {
           <div className="workspace">
             <aside className="rail" aria-label="Files">
               <div className="rail-head">
-                <h2>Files <span className="count">{items.length}</span>{items.length > 1 && <span className="swipe">swipe {'\u2192'}</span>}</h2>
+                <h2>Roll <span className="count">{items.length} frame{items.length === 1 ? '' : 's'}</span></h2>
                 <span className="rail-add"><button className="link" onClick={() => input.current?.click()}>+ Files</button><button className="link" onClick={() => folderInput.current?.click()}>+ Folder</button></span>
               </div>
+              <div className="roll">
               <ul className="files">
-                {items.map((i) => (
+                {items.map((i, n) => (
                   <li key={i.id}>
                     <button className={`file${i.id === cur?.id ? ' on' : ''}`} onClick={() => setSelected(i.id)} aria-current={i.id === cur?.id}>
+                      <span className="fno" aria-hidden="true"><span>{'\u25B6'} {pad2(n + 1)}</span><span>{pad2(n + 1)}A</span></span>
                       {i.analysis && isPreviewable(i.analysis.format) ? <img src={i.url} alt="" className="fthumb" loading="lazy" decoding="async" /> : <span className="fthumb tile" aria-hidden="true">{i.analysis ? FORMAT_LABEL[i.analysis.format].slice(0, 4) : '···'}</span>}
                       <span className="fmeta">
                         <span className="fname">{i.file.name}</span>
@@ -187,6 +197,7 @@ export function App() {
                   </li>
                 ))}
               </ul>
+              </div>
             </aside>
             <section className="report" aria-label="Report" key={cur?.id}>
               {cur && <Report item={cur} />}
@@ -249,11 +260,11 @@ function Header({ onProof }: { onProof: () => void }) {
   return (
     <header className="top">
       <a className="brand" href="/" aria-label="Hushprint home">
-        <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true"><path d="M5 11V5h6M21 5h6v6M27 21v6h-6M11 27H5v-6" fill="none" stroke="currentColor" strokeWidth="2.6" className="mark-c" /><path d="M11 21 21 11" stroke="currentColor" strokeWidth="2.6" /></svg>
+        <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><path d="M5 11V5h6M21 5h6v6M27 21v6h-6M11 27H5v-6" fill="none" stroke="currentColor" strokeWidth="2.6" /><path d="M11 21 21 11" stroke="currentColor" strokeWidth="3" className="mark-c" /></svg>
         <span>HUSHPRINT</span>
       </a>
-      <button className="pill" onClick={onProof} aria-haspopup="dialog">
-        <span className="dot" aria-hidden="true" /> <span className="pill-long">Zero uploads.&nbsp;</span><u>Prove it</u>
+      <button className="proofbtn" onClick={onProof} aria-haspopup="dialog">
+        <span className="pill-long">Zero uploads.&nbsp;</span><u>Prove it</u>
       </button>
     </header>
   );
@@ -263,16 +274,14 @@ function Empty({ onPick, onFolder, onSample }: { onPick: () => void; onFolder: (
   return (
     <div className="hero">
       <div className="hero-main">
-        <p className="eyebrow">File privacy check {'·'} v2</p>
-        <h1>Your photos talk.<br /><em>Make them hush.</em></h1>
-        <p className="steps" aria-label="How it works"><b>Drop</b> {'·'} <b>See</b> {'·'} <b>Clean</b></p>
-        <p className="lede">Every photo, PDF, Office file and video you share can carry the GPS spot you stood on, your phone&rsquo;s serial number, the author&rsquo;s name, the second it was made, and a hidden copy of whatever you cropped out. Drop it in to see exactly what it gives away, then wipe it.</p>
+        <p className="eyebrow">File privacy check</p>
+        <h1>See what your files <span className="mk">give away.<svg viewBox="0 0 300 14" preserveAspectRatio="none" aria-hidden="true"><path d="M2 9 C 60 3, 120 12, 180 6 S 270 4, 298 8" /></svg></span></h1>
+        <p className="steps" aria-label="How it works"><b>Drop</b> {'→'} <b>See</b> {'→'} <b>Clean</b></p>
+        <p className="lede">Photos, PDFs, Office files and videos carry hidden data: the GPS spot where you stood, your phone&rsquo;s serial number, the author&rsquo;s name, the exact second, and a copy of what you cropped out. Drop a file to see what it gives away. Then strip it.</p>
         <button className="drop" onClick={onPick} aria-label="Choose files to scan. You can also drag and drop files or a folder here.">
-          <span className="corners" aria-hidden="true" />
-          <svg className="upload" viewBox="0 0 48 48" width="44" height="44" aria-hidden="true"><path d="M24 33V10M14 19l10-10 10 10" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" /><path d="M8 30v10h32V30" fill="none" stroke="currentColor" strokeWidth="3" /></svg>
-          <span className="drop-text">
+          <span className="drop-window">
             <span className="drop-title">Drop files or a whole folder</span>
-            <span className="drop-sub">or click anywhere here to choose {'·'} photos, PDF, Office, video</span>
+            <span className="drop-sub">or tap here to choose. Photos, PDF, Office, video.</span>
           </span>
         </button>
         <div className="hero-actions">
@@ -280,18 +289,21 @@ function Empty({ onPick, onFolder, onSample }: { onPick: () => void; onFolder: (
           <button className="btn ghost" onClick={onFolder}>Choose a folder</button>
         </div>
         <p className="fine">Files are read in your browser and never sent anywhere. The page&rsquo;s security policy forbids network requests entirely.</p>
-        <p className="fine limits"><b>Honest limits.</b> Hushprint removes metadata, not what is visible in the picture, page or video. HEIC export re-encodes to JPEG, and some PDF and video leaks are shown but cannot be removed losslessly.</p>
+        <p className="fine limits"><b>Limits.</b> Hushprint removes metadata, not what is visible in the picture, page or video. HEIC export re-encodes to JPEG, and some PDF and video leaks are shown but cannot be removed losslessly.</p>
       </div>
-      <aside className="specimen" aria-label="Example of what a photo can reveal">
-        <p className="eyebrow">Specimen {'·'} illustration</p>
-        <div className="spec-map"><WorldMap point={{ lat: 33.785, lon: -84.374 }} label="33.785° N, 84.374° W" /></div>
+      <aside className="specimen sheet" aria-label="Example of what a photo can reveal">
+        <p className="sheet-head"><span>Contact sheet</span><span>Specimen. Not your file.</span></p>
+        <div className="print">
+          <div className="spec-map"><WorldMap point={{ lat: 33.785, lon: -84.374 }} label="33.785° N, 84.374° W" /></div>
+          <p className="note spec-note">Street-level. One house.</p>
+        </div>
         <table className="spec-table">
           <tbody>
-            <tr><th>Where</th><td><Sev level="critical" /></td><td>Street-level GPS</td></tr>
-            <tr><th>Who</th><td><Sev level="high" /></td><td>Owner name, serial no.</td></tr>
-            <tr><th>Leftover</th><td><Sev level="high" /></td><td>Hidden uncropped thumbnail</td></tr>
-            <tr><th>When</th><td><Sev level="medium" /></td><td>Date and time to the second</td></tr>
-            <tr><th>What</th><td><Sev level="medium" /></td><td>Phone make &amp; model</td></tr>
+            <tr><th scope="row">Where</th><td><Sev level="critical" /></td><td>Street-level GPS</td></tr>
+            <tr><th scope="row">Who</th><td><Sev level="high" /></td><td>Owner name, serial no.</td></tr>
+            <tr><th scope="row">Leftover</th><td><Sev level="high" /></td><td>Hidden uncropped thumbnail</td></tr>
+            <tr><th scope="row">When</th><td><Sev level="medium" /></td><td>Date and time to the second</td></tr>
+            <tr><th scope="row">What</th><td><Sev level="medium" /></td><td>Phone make &amp; model</td></tr>
           </tbody>
         </table>
       </aside>
@@ -302,13 +314,13 @@ function Empty({ onPick, onFolder, onSample }: { onPick: () => void; onFolder: (
 function Report({ item }: { item: Item }) {
   const a = item.analysis;
   const done = !!item.result;
-  // play the scrub animation, then fold the per-category detail away so the clean state stays short
+  // play the redaction, stamp the result, then fold the per-category detail away so the clean state stays short
   const [folded, setFolded] = useState(done);
   const [all, setAll] = useState(false);
   const narrow = useNarrow();
-  useEffect(() => { if (!done) return; const t = setTimeout(() => setFolded(true), 1900); return () => clearTimeout(t); }, [done]);
-  if (item.error) return <div className="verdict sev-bg-high"><p className="eyebrow">{item.file.name}</p><h2>We couldn&rsquo;t scan this file.</h2><p className="lede">{item.error}</p></div>;
-  if (!a) return <div className="verdict"><p className="eyebrow">{item.file.name}</p><h2>Scanning&hellip;</h2></div>;
+  useEffect(() => { if (!done) return; const t = setTimeout(() => setFolded(true), 2600); return () => clearTimeout(t); }, [done]);
+  if (item.error) return <div className="verdict sheet sev-bg-high"><p className="eyebrow">{item.file.name}</p><h2>We couldn&rsquo;t scan this file.</h2><p className="lede">{item.error}</p></div>;
+  if (!a) return <div className="verdict sheet"><p className="eyebrow">{item.file.name}</p><h2>Scanning&hellip;</h2></div>;
   const leaks = a.findings.filter((f) => f.label !== 'Orientation');
   const counts = (['critical', 'high', 'medium', 'low'] as Severity[]).map((s) => [s, leaks.filter((f) => f.severity === s).length] as const).filter(([, n]) => n);
   const groups = (Object.keys(CATEGORY_TITLE) as Category[])
@@ -316,58 +328,17 @@ function Report({ item }: { item: Item }) {
     .filter((g) => g.list.length)
     .sort((x, y) => Math.max(...y.list.map((f) => RANK[f.severity])) - Math.max(...x.list.map((f) => RANK[f.severity])));
   let order = 0;
+  const showMap = !folded && !done && !!a.gps;
+  const score = done ? item.result!.after.score : a.score;
+  const partial = done && item.result!.remaining.length > 0;
 
-  return (
-    <>
-      <div className={`verdict ${done ? 'sev-bg-clean' : `sev-bg-${a.risk.level}`}`}>
-        <div className="v-head">
-          <p className="eyebrow">{a.name} {'·'} {FORMAT_LABEL[a.format]}{a.detail ? ` · ${a.detail}` : ''}{a.width ? ` · ${a.width}\u00d7${a.height}` : ''} {'·'} {kb(a.size)}</p>
-          {done ? (item.result!.remaining.length ? <span className="sev sev-medium big"><span aria-hidden="true">!</span> Partly clean</span> : <span className="sev sev-clean big"><span aria-hidden="true">{'✓'}</span> Clean</span>) : <Sev level={a.risk.level} big />}
-        </div>
-        <div className="scorebox" role="group" aria-label="Privacy score">
-          <span className={`scorenum band-${scoreBand(done ? item.result!.after.score : a.score)}`}>{done ? item.result!.after.score : a.score}<small>/100</small></span>
-          <span className="scoretxt">Privacy score{done && <> {'·'} was <b>{a.score}</b></>}<br /><em>{BAND_LABEL[scoreBand(done ? item.result!.after.score : a.score)]}</em></span>
-        </div>
-        <h2>{done ? (item.result!.remaining.length ? `Cleaned. ${item.result!.remaining.length} thing${item.result!.remaining.length > 1 ? 's' : ''} Hushprint cannot remove.` : 'Clean. Nothing identifying is left in this file.') : a.risk.headline}</h2>
-        {!done && a.risk.bullets.length > 0 && <ul className="bullets">{a.risk.bullets.map((b) => <li key={b}>{b}</li>)}</ul>}
-        {!done && counts.length > 0 && <p className="counts">{counts.map(([s, n]) => <span key={s} className={`c-${s}`}>{n} {s}</span>)}</p>}
-        {done && item.result && <Verified r={item.result} />}
-        {a.warnings.length > 0 && <p className="warn">{a.warnings.join(' ')}</p>}
-      </div>
-
-      {item.cleanError && <div className="verdict sev-bg-high"><h2>Not cleaned.</h2><p className="lede">{item.cleanError}</p></div>}
-      {!folded && (a.gps || (a.thumbnail && isPreviewable(a.format))) && (
-        <div className="panels">
-          {a.gps && (
-            <div className={`panel map-panel${done ? ' removed' : ''}`}>
-              <h3>Location {done && <span className="tag-clean">removed</span>}</h3>
-              <div className="map-wrap">
-                <WorldMap point={a.gps} label={nearestCity(a.gps)[0] ? `near ${nearestCity(a.gps)[0].name}` : undefined} />
-                <div className="radar-wrap"><Radar point={a.gps} cities={nearestCity(a.gps, 3)} /></div>
-              </div>
-              <p className="coord">{formatCoord(a.gps)}</p>
-              <p className="sub">{done ? 'Not present in the clean copy.' : ''}{!done && a.gps.nearest[0] ? `${formatDistance(a.gps.nearest[0].km)} from ${a.gps.nearest[0].name}. ` : ''}{!done && (a.gps.accuracyM ? `Accurate to about ${Math.round(a.gps.accuracyM)} m.` : 'Phone GPS is typically accurate to a few metres: enough to pick out one house.')}</p>
-            </div>
-          )}
-          {a.thumbnail && isPreviewable(a.format) && (
-            <div className={`panel thumb-panel${done ? ' removed' : ''}`}>
-              <h3>Hidden preview {done && <span className="tag-clean">removed</span>}</h3>
-              <div className="compare">
-                <figure><img src={item.url} alt="The photo as it appears" /><figcaption>What you see</figcaption></figure>
-                {item.thumbUrl && <figure className={a.thumbnail.mismatch ? 'leaky' : ''}><img src={item.thumbUrl} alt="The thumbnail hidden inside the file" /><figcaption>What&rsquo;s hiding inside{a.thumbnail.width ? ` (${a.thumbnail.width}×${a.thumbnail.height})` : ''}</figcaption></figure>}
-              </div>
-              <p className="sub">{done ? 'The hidden preview is gone from the clean copy.' : a.thumbnail.mismatch ? 'The embedded thumbnail is a different shape, so it was captured before the crop. It can show exactly what you cut out.' : 'A small copy of the photo travels inside the file. If you edit or redact the picture, this copy can still show the original.'}</p>
-            </div>
-          )}
-        </div>
-      )}
-
+  const cardsEl = (
       <div className="cards" hidden={folded}>
         {groups.length === 0 && <p className="nothing">No metadata fields found. This image is already quiet.</p>}
         {(all ? groups : groups.slice(0, narrow ? 1 : 2)).map(({ cat, list }) => {
           const top = list.reduce<Severity>((m, f) => (RANK[f.severity] > RANK[m] ? f.severity : m), 'info');
           return (
-            <section key={cat} className={`card${done ? ' scrubbed' : ''}`} style={{ '--c': `var(--${top})` } as CSSProperties}>
+            <section key={cat} className={`card${done ? ' scrubbed' : ''}`}>
               <header><h3>{CATEGORY_TITLE[cat]}</h3><Sev level={top} /></header>
               <dl>
                 {list.map((f) => <Row key={f.id} f={f} i={order++} />)}
@@ -376,6 +347,61 @@ function Report({ item }: { item: Item }) {
           );
         })}
       </div>
+  );
+
+  return (
+    <>
+      <div className={`lead${showMap || (done && !folded) ? ' with-map' : ''}`}>
+        <div className={`verdict sheet ${done ? 'sev-bg-clean' : `sev-bg-${a.risk.level}`}`}>
+          <div className="v-head">
+            <p className="eyebrow">{a.name} {'·'} {FORMAT_LABEL[a.format]}{a.detail ? ` · ${a.detail}` : ''}{a.width ? ` · ${a.width}×${a.height}` : ''} {'·'} {kb(a.size)}</p>
+            {done ? (partial ? <span className="sev sev-medium big"><span aria-hidden="true">!</span> Partly clean</span> : <span className="sev sev-clean big"><span aria-hidden="true">{'✓'}</span> Clean</span>) : <Sev level={a.risk.level} big />}
+          </div>
+          <div className="scorebox" role="group" aria-label="Privacy score">
+            <span className={`scorenum band-${scoreBand(score)}`}><span className="digits">{score}{!done && a.gps && <Scribble />}</span><small>/100</small></span>
+            <span className="scoretxt">Privacy score{done && <> {'·'} was <b>{a.score}</b></>}<br /><em>{BAND_LABEL[scoreBand(score)]}</em></span>
+            {!done && a.gps && <span className="note score-note">GPS. 25 at best.</span>}
+            {done && item.result && <Stamp r={item.result} partial={partial} />}
+          </div>
+          <h2>{done ? (partial ? `Cleaned. ${item.result!.remaining.length} thing${item.result!.remaining.length > 1 ? 's' : ''} Hushprint cannot remove.` : 'Nothing identifying is left in this file.') : a.risk.headline}</h2>
+          {!done && a.risk.bullets.length > 0 && <ul className="bullets">{a.risk.bullets.map((b) => <li key={b}>{b}</li>)}</ul>}
+          {!done && counts.length > 0 && <p className="counts">{counts.map(([s, n]) => <span key={s} className={`c-${s}`}>{n} {s}</span>)}</p>}
+          {done && item.result && <Verified r={item.result} partial={partial} />}
+          {a.warnings.length > 0 && <p className="warn">{a.warnings.join(' ')}</p>}
+        </div>
+        {done && !folded && cardsEl}
+        {showMap && a.gps && (
+          <div className={`panel sheet map-panel${done ? ' removed' : ''}`}>
+            <p className="sheet-head"><span>Location</span>{done ? <span className="tag-clean">Removed</span> : <span>Finding 1</span>}</p>
+            <div className="map-wrap print">
+              <WorldMap point={a.gps} label={nearestCity(a.gps)[0] ? `near ${nearestCity(a.gps)[0].name}` : undefined} />
+              <div className="radar-wrap"><Radar point={a.gps} cities={nearestCity(a.gps, 3)} /></div>
+              {!done && <p className="note map-note">{a.gps.accuracyM ? `Within ${Math.round(a.gps.accuracyM)} m.` : 'Picks out one house.'}</p>}
+            </div>
+            <p className="coord"><span className="val">{formatCoord(a.gps)}</span></p>
+            <p className="sub">{done ? 'Not present in the clean copy.' : ''}{!done && a.gps.nearest[0] ? `${formatDistance(a.gps.nearest[0].km)} from ${a.gps.nearest[0].name}. ` : ''}{!done && (a.gps.accuracyM ? `Accurate to about ${Math.round(a.gps.accuracyM)} m.` : 'Phone GPS is typically accurate to a few metres: enough to pick out one house.')}</p>
+          </div>
+        )}
+      </div>
+
+      {item.cleanError && <div className="verdict sheet sev-bg-high"><h2>Not cleaned.</h2><p className="lede">{item.cleanError}</p></div>}
+      {!folded && a.thumbnail && isPreviewable(a.format) && (
+        <div className={`panel sheet thumb-panel${done ? ' removed' : ''}`}>
+          <p className="sheet-head"><span>Hidden preview</span>{done ? <span className="tag-clean">Removed</span> : <span>Finding 2</span>}</p>
+          <div className="compare">
+            <figure><div className="print"><img src={item.url} alt="The photo as it appears" /></div><figcaption><b>What you cropped to</b>The photo as you see it.</figcaption></figure>
+            {item.thumbUrl && (
+              <figure className={a.thumbnail.mismatch ? 'leaky' : ''}>
+                <div className="print"><img src={item.thumbUrl} alt="The thumbnail hidden inside the file" />{a.thumbnail.mismatch && !done && <><Scribble /><span className="note thumb-note">Cropped out. Still here.</span></>}</div>
+                <figcaption><b>What&rsquo;s still inside</b>{a.thumbnail.width ? `${a.thumbnail.width}×${a.thumbnail.height} copy stored in the file.` : 'A copy stored in the file.'}</figcaption>
+              </figure>
+            )}
+          </div>
+          <p className="sub">{done ? 'The hidden preview is gone from the clean copy.' : a.thumbnail.mismatch ? 'The embedded thumbnail is a different shape, so it was captured before the crop. It can show exactly what you cut out.' : 'A small copy of the photo travels inside the file. If you edit or redact the picture, this copy can still show the original.'}</p>
+        </div>
+      )}
+
+      {!(done && !folded) && cardsEl}
 
       {!all && !folded && groups.length > (narrow ? 1 : 2) && (
         <button className="btn ghost seeall" onClick={() => setAll(true)}>See all {leaks.length} leaks</button>
@@ -387,41 +413,54 @@ function Report({ item }: { item: Item }) {
 }
 
 function Row({ f, i }: { f: Finding; i: number }) {
+  const mark = f.severity === 'critical' || f.severity === 'high';
   return (
     <div className="row" style={{ '--i': i } as CSSProperties}>
-      <dt><span className={`dotsev d-${f.severity}`} aria-label={SEV_LABEL[f.severity]} title={SEV_LABEL[f.severity]} />{f.label}</dt>
+      <dt>{f.label}</dt>
       <dd>
-        <span className="val"><span className="txt">{f.value}</span><span className="gone" aria-hidden="true">removed</span></span>
-        <span className="why">{f.why} <span className="src">{f.source}</span>{f.removable === false && <span className="stuck"> not removable by Hushprint</span>}</span>
+        <span className="val"><span className="txt">{f.value}</span><span className="gone" aria-hidden="true">removed</span>{mark && <Scribble />}</span>
+        <span className="why"><span className={`rank r-${f.severity}`}>{SEV_LABEL[f.severity]}.</span> {f.why} <span className="src">{f.source}</span>{f.removable === false && <span className="stuck"> Not removable by Hushprint</span>}</span>
       </dd>
     </div>
   );
 }
 
 const CONTENT: Record<string, string> = { pdf: 'Every page, font and image', docx: 'Document body and media', xlsx: 'Sheets and media', pptx: 'Slides and media', mp4: 'Audio and video streams', webp: 'Pixels', png: 'Pixels', jpeg: 'Pixels', heic: 'Pixels' };
-function Verified({ r }: { r: CleanResult }) {
-  const f = r.before.format;
+function Stamp({ r, partial }: { r: CleanResult; partial: boolean }) {
+  const left = r.after.findings.filter((x) => x.label !== 'Orientation' && x.removable !== false).length;
   return (
-    <>
-      <ul className="proof-list">
-        <li><b>{r.removed.length}</b> fields removed, re-scanned: <b>{r.after.findings.filter((x) => x.label !== 'Orientation' && x.removable !== false).length}</b> removable ones remain</li>
-        {r.reencoded
-          ? <li className="warnline"><b>Re-encoded.</b> {f === 'heic' ? 'HEIC was decoded and saved again as JPEG, so the pixels are not byte-identical and colours are converted to sRGB.' : 'The rotation was baked into the pixels, so the image was decoded and saved again (not byte-identical).'}</li>
-          : <li>{CONTENT[f]} {r.pixelsIdentical ? <b>byte-identical</b> : <b className="bad">changed</b>} (no re-compression, no quality loss)</li>}
-        <li>{r.orientationKept > 1 ? 'Rotation tag kept' : 'No rotation tag left'} {'·'} {kb(r.before.size)} {'→'} {kb(r.bytes.length)}</li>
-      </ul>
+    <div className={`stamp${partial ? ' partial' : ''}`} role="img" aria-label={partial ? 'Stamped: partly clean' : 'Stamped: clean'}>
+      <span>{partial ? 'Partly clean' : 'Clean'}</span>
+      <small>Re-scan: {left} left<br />Checksum: {r.reencoded ? 'not identical' : r.pixelsIdentical ? 'identical' : 'changed'}</small>
+    </div>
+  );
+}
+function Verified({ r, partial }: { r: CleanResult; partial: boolean }) {
+  const f = r.before.format;
+  const left = r.after.findings.filter((x) => x.label !== 'Orientation' && x.removable !== false).length;
+  const pixels = f === 'jpeg' || f === 'png' || f === 'webp' || f === 'heic';
+  return (
+    <div className="proof-wrap">
+      <dl className="slip">
+        <div><dt>Re-scan</dt><dd>Found <b>{left}</b> remaining. {r.removed.length} field{r.removed.length === 1 ? '' : 's'} removed.</dd></div>
+        <div><dt>{pixels ? 'Pixel' : 'Content'} checksum</dt>
+          <dd>{r.reencoded
+            ? <><b className="warnline">Not identical.</b> {f === 'heic' ? 'HEIC was decoded and saved again as JPEG, and colours are converted to sRGB.' : 'The rotation was baked into the pixels, so the image was decoded and saved again.'}</>
+            : <>{CONTENT[f]}: {r.pixelsIdentical ? <b>identical</b> : <b className="bad">changed</b>}. No re-compression, no quality loss.</>}</dd></div>
+        <div><dt>Size</dt><dd>{r.orientationKept > 1 ? 'Rotation tag kept' : 'No rotation tag left'} {'·'} {kb(r.before.size)} {'→'} {kb(r.bytes.length)}</dd></div>
+      </dl>
       {r.remaining.length > 0 && (
         <div className="caveats"><b>Still in the file (Hushprint cannot remove these):</b>
           <ul>{r.remaining.map((x) => <li key={x.id}>{x.label}: {x.value}</li>)}</ul>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
 function Diff({ r }: { r: CleanResult }) {
   return (
-    <details className="diff" open>
+    <details className="diff sheet" open>
       <summary>Before / after <span className="count">{r.removed.length + (r.orientationKept > 1 ? 1 : 0)} fields</span></summary>
       <div className="table-wrap">
         <table>
@@ -439,7 +478,7 @@ function Diff({ r }: { r: CleanResult }) {
 function Footer() {
   return (
     <footer className="foot">
-      <p><b>Honest limits.</b> Hushprint removes metadata from the file, not what is visible in the picture, page or video (faces, street signs, reflections, text). HEIC export re-encodes to JPEG. Some PDF and video leaks are shown but cannot be removed losslessly.</p>
+      <p><b>Limits.</b> Hushprint removes metadata from the file, not what is visible in the picture, page or video (faces, street signs, reflections, text). HEIC export re-encodes to JPEG. Some PDF and video leaks are shown but cannot be removed losslessly.</p>
     </footer>
   );
 }

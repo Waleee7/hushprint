@@ -1,6 +1,8 @@
-import '@fontsource-variable/bricolage-grotesque';
-import '@fontsource/jetbrains-mono/400.css';
-import '@fontsource/jetbrains-mono/600.css';
+import '@fontsource/barlow-condensed/latin-600.css';
+import '@fontsource/barlow-condensed/latin-800.css';
+import '@fontsource/barlow-semi-condensed/latin-400.css';
+import '@fontsource/barlow-semi-condensed/latin-600.css';
+import '@fontsource/permanent-marker/latin-400.css';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';

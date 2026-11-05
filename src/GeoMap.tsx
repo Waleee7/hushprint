@@ -3,6 +3,10 @@ import { LAND_DIMS, haversineKm, landGrid, project, formatDistance, type LatLon 
 
 const CELL = 5;
 
+/** A hand-drawn loop around (cx, cy), the way an editor circles a frame on a contact sheet. Overshoots where it closes. */
+const loop = (cx: number, cy: number, r: number) =>
+  `M${cx - r * 0.15} ${cy - r * 1.05} C${cx + r * 0.95} ${cy - r * 1.25} ${cx + r * 1.3} ${cy + r * 0.5} ${cx + r * 0.2} ${cy + r * 1.08} C${cx - r * 1.1} ${cy + r * 1.3} ${cx - r * 1.35} ${cy - r * 0.6} ${cx + r * 0.3} ${cy - r * 1.18} C${cx + r * 0.6} ${cy - r * 1.25} ${cx + r * 0.9} ${cy - r * 1.1} ${cx + r * 1.05} ${cy - r * 0.8}`;
+
 /** Offline dot-matrix world map. No tiles, no requests: the land mask is baked into the bundle. */
 export function WorldMap({ point, label }: { point: LatLon; label?: string }) {
   const d = useMemo(() => {
@@ -19,11 +23,10 @@ export function WorldMap({ point, label }: { point: LatLon; label?: string }) {
       <path d={d} className="land" />
       <line x1={px} x2={px} y1={0} y2={LAND_DIMS.h * CELL} className="cross" />
       <line y1={py} y2={py} x1={0} x2={LAND_DIMS.w * CELL} className="cross" />
-      <circle cx={px} cy={py} r={20} className="ring r1" />
-      <circle cx={px} cy={py} r={20} className="ring r2" />
+      <path d={loop(px, py, 34)} className="ring" pathLength={1} />
       <circle cx={px} cy={py} r={9} className="pin" />
       {label && (
-        <g transform={`translate(${flip ? px - 20 : px + 20} ${py - 16})`}>
+        <g transform={`translate(${flip ? px - 44 : px + 44} ${py - 30})`}>
           <text className="pinlabel" textAnchor={flip ? 'end' : 'start'}>{label}</text>
         </g>
       )}
@@ -53,7 +56,7 @@ export function Radar({ point, cities }: { point: LatLon; cities: { name: string
           <text x={left ? p.x - 8 : p.x + 8} y={p.y + 4} textAnchor={left ? 'end' : 'start'} className="ct">{c.name}</text>
           <text x={left ? p.x - 8 : p.x + 8} y={p.y + 16} textAnchor={left ? 'end' : 'start'} className="rt">{formatDistance(dists[i])}</text>
         </g>); })}
-      <circle r={12} className="ring r1" /><circle r={5} className="pin" />
+      <path d={loop(0, 0, 16)} className="ring" pathLength={1} /><circle r={5} className="pin" />
     </svg>
   );
 }
