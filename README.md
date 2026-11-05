@@ -1,12 +1,12 @@
 # Hushprint
 
-**Your files talk. Make them hush.** See the GPS spot, author name, device serial and hidden thumbnail inside a photo, PDF, Office file or video, then strip them. In your browser. Offline. Nothing is uploaded, and the page is not even allowed to make a network request.
+![Hushprint report for a PDF: privacy score 30 out of 100, author and software named](docs/report.png)
 
-**Drop · See · Clean**
+**Your files talk. Make them hush.** See the GPS spot, author name, device serial and hidden thumbnail inside a photo, PDF, Office file or video, then strip them. In your browser, offline, with nothing uploaded.
 
-| What's leaking | After "Clean & download" |
-|---|---|
-| ![Report with a privacy score of 30 for a PDF, listing author and software](docs/report.png) | ![Verified clean: score 100, before/after table](docs/cleaned.png) |
+**Who it's for:** anyone who posts, sells, emails or submits files and does not want a stranger to learn where they live, who they are or what phone they own.
+
+**Drop · See · Clean.** Drop a file or a whole folder, see exactly what it gives away with a 0 to 100 privacy score, clean it in one tap and check the proof. The page is not even allowed to make a network request.
 
 ## Quick start
 
@@ -25,16 +25,7 @@ node bin/hushprint.mjs clean ./trip --out ./safe           # whole folder, never
 node bin/hushprint.mjs clean ./trip --share-safe           # random output names
 ```
 
-## What's new in v2
-
-- **More than photos.** WebP, HEIC, PDF, DOCX/XLSX/PPTX and MP4/MOV, on top of JPEG and PNG.
-- **Privacy score** from 0 to 100 per file and per batch (the batch is only as private as its worst file). It is a transparent heuristic: capped penalties per severity, and GPS coordinates cap the score at 25. See [`src/engine/score.ts`](src/engine/score.ts).
-- **Share-safe mode**, one tap: strips everything including the rotation tag and renames every file to a random `hp-<12 hex>` name, so the filename cannot leak either.
-- **Drag a folder** to batch-clean it, with a progress bar. Subfolders are kept inside the ZIP; unsupported files are skipped and counted.
-- **Installable and offline.** A small service worker caches the app shell. It never sees your files.
-- **CLI** (`hushprint scan|clean`) on the same engine.
-- **Hardened parsers.** Every allocation is capped, decompression bombs are cut off at a few MB, and every parser is fuzzed. Trusted Types is enforced. See [SECURITY.md](SECURITY.md) and [THREAT_MODEL.md](THREAT_MODEL.md).
-- **Honest caveats.** Leaks the tool can see but cannot remove losslessly are listed after cleaning ("Partly clean"), never hidden behind a green tick.
+![After cleaning: score 100, before and after table](docs/cleaned.png)
 
 ## Supported formats
 
@@ -49,6 +40,17 @@ node bin/hushprint.mjs clean ./trip --share-safe           # random output names
 | MP4 / MOV | GPS (`©xyz`, QuickTime `ISO6709`), make, model, software, dates, titles, XMP, timed-metadata tracks | Tag boxes and header timestamps | Boxes renamed `free` and zero-filled in place; audio/video samples untouched |
 
 Every clean copy is parsed again with the same engine. The UI shows what was removed, what remains, and whether the content (pixels, pages, media samples) is byte-identical.
+
+## What's new in v2
+
+- **More than photos.** WebP, HEIC, PDF, DOCX/XLSX/PPTX and MP4/MOV, on top of JPEG and PNG.
+- **Privacy score** from 0 to 100 per file and per batch (the batch is only as private as its worst file). It is a transparent heuristic: capped penalties per severity, and GPS coordinates cap the score at 25. See [`src/engine/score.ts`](src/engine/score.ts).
+- **Share-safe mode**, one tap: strips everything including the rotation tag and renames every file to a random `hp-<12 hex>` name, so the filename cannot leak either.
+- **Drag a folder** to batch-clean it, with a progress bar. Subfolders are kept inside the ZIP; unsupported files are skipped and counted.
+- **Installable and offline.** A small service worker caches the app shell. It never sees your files.
+- **CLI** (`hushprint scan|clean`) on the same engine.
+- **Hardened parsers.** Every allocation is capped, decompression bombs are cut off at a few MB, and every parser is fuzzed. Trusted Types is enforced. See [SECURITY.md](SECURITY.md) and [THREAT_MODEL.md](THREAT_MODEL.md).
+- **Honest caveats.** Leaks the tool can see but cannot remove losslessly are listed after cleaning ("Partly clean"), never hidden behind a green tick.
 
 ## How it works
 
@@ -80,16 +82,13 @@ All of it is hand-written TypeScript in [`src/engine`](src/engine), with no pars
 
 ## Honest limits
 
-- It removes **metadata**, not what is visible: faces, street signs, house numbers, reflections, text on a page.
-- **HEIC export and baked-in rotation re-encode** the image (lossy, sRGB). The engine path is unit-tested with an injected re-encoder; the real canvas path depends on your browser's decoder and was not exercised for HEIC here (headless Chromium cannot open HEIC).
-- **PDF**: Info and XMP are removed. Not removed, but reported: Info stored inside a compressed object stream, earlier saved revisions, annotation and form-field authors, embedded images' own metadata, encrypted files (refused).
-- **Office**: `docProps` and the thumbnail are removed. Tracked-change and comment authors, hidden sheets and Excel saved paths are reported, not removed. Output was checked with our own parser, Python's zipfile and macOS `textutil`, **not with Microsoft Office**.
-- **Video**: timed-metadata tracks (action cams, dashcams) can hold per-second GPS and are reported, not removed. Streams are never re-encoded, so a video with a leak in another container is not fixed.
-- Files over 256 MB are refused; a batch is capped at 500 files / 1 GB. Parsing runs on the main thread (a Web Worker is on the roadmap).
-- The score and the plain-English risk text are heuristics. "Reveals where you live" assumes the file was made at home.
-- Nearest-city distances use a built-in list of about 70 cities.
-- Not a forensic guarantee against anything outside the file: sensor noise, writing style, filesystem timestamps.
-- Not audited by a third party.
+The five that matter. The full list, with what is and is not protected, is in [THREAT_MODEL.md](THREAT_MODEL.md).
+
+1. **It removes metadata, not what is visible**: faces, street signs, house numbers, text on a page.
+2. **HEIC export and baked-in rotation re-encode** the image (lossy, colours go to sRGB). The real canvas path was not exercised for HEIC here; headless Chromium cannot open HEIC.
+3. **Some leaks are shown but not removed**: PDF Info inside compressed object streams and earlier saved revisions, tracked-change authors in Office files, per-second GPS tracks in action-cam video. The UI marks such files "Partly clean".
+4. **Office output was not opened in Microsoft Office.** It was checked with our own parser, Python's zipfile and macOS `textutil`.
+5. **Limits and trust:** files over 256 MB are refused, a batch is capped at 500 files / 1 GB, parsing runs on the main thread, and nothing has been audited by a third party.
 
 ## Roadmap
 
@@ -103,9 +102,3 @@ All of it is hand-written TypeScript in [`src/engine`](src/engine), with no pars
 ## Stack
 
 Vite, React, TypeScript, Vitest. Fonts (Bricolage Grotesque, JetBrains Mono) are bundled locally. MIT licensed.
-
----
-
-**Repo description:** See what hidden data your photos, PDFs, Office files and videos leak (GPS, author names, serials, thumbnails), then strip it. 100% in-browser, offline, zero uploads, hand-written parsers.
-
-**Topics:** `privacy` `exif` `metadata` `metadata-stripper` `gps` `photo-privacy` `pdf` `docx` `heic` `webp` `mp4` `pwa` `cli` `offline-first` `local-first` `csp` `trusted-types` `typescript` `react` `vite`

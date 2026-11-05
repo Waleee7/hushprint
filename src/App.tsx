@@ -28,6 +28,12 @@ const Sev = ({ level, big }: { level: Severity; big?: boolean }) => (
 );
 
 let uid = 0;
+/** True on phone-width screens. Decides how many categories show before "See all". */
+const useNarrow = () => {
+  const [n, setN] = useState(() => window.matchMedia('(max-width: 600px)').matches);
+  useEffect(() => { const m = window.matchMedia('(max-width: 600px)'); const f = () => setN(m.matches); m.addEventListener('change', f); return () => m.removeEventListener('change', f); }, []);
+  return n;
+};
 
 export function App() {
   const [items, setItems] = useState<Item[]>([]);
@@ -158,7 +164,7 @@ export function App() {
       {notice && <p className="notice" role="status">{notice} <button className="link inline" onClick={() => setNotice(undefined)}>Dismiss</button></p>}
       <main id="main" className={items.length ? 'loaded' : 'empty'}>
         {!items.length ? (
-          <Empty onPick={() => input.current?.click()} onSample={loadSample} />
+          <Empty onPick={() => input.current?.click()} onFolder={() => folderInput.current?.click()} onSample={loadSample} />
         ) : (
           <div className="workspace">
             <aside className="rail" aria-label="Files">
@@ -181,15 +187,21 @@ export function App() {
                   </li>
                 ))}
               </ul>
-              <div className="settings">
-                <label className="check"><input type="checkbox" checked={keepRotation} disabled={allCleaned} onChange={(e) => setKeepRotation(e.target.checked)} /> <span>Keep rotation tag <span className="hint">(recommended)</span></span></label>
-                <p className="hint small">Off bakes the rotation into the pixels, which re-encodes rotated images.</p>
-              </div>
-              <button className="link subtle" onClick={reset}>Remove all &amp; start over</button>
             </aside>
             <section className="report" aria-label="Report" key={cur?.id}>
               {cur && <Report item={cur} />}
             </section>
+          </div>
+        )}
+        {items.length > 0 && (
+          <div className="settings-row">
+            {!allCleaned && (
+              <div className="settings">
+                <label className="check"><input type="checkbox" checked={keepRotation} onChange={(e) => setKeepRotation(e.target.checked)} /> <span>Keep photo orientation info <span className="hint">(recommended)</span></span></label>
+                <p className="hint small">Photos are stored sideways with a &ldquo;rotate&rdquo; note. Off bakes the rotation into the pixels, which re-encodes rotated images.</p>
+              </div>
+            )}
+            <button className="link subtle" onClick={reset}>Remove all &amp; start over</button>
           </div>
         )}
       </main>
@@ -214,7 +226,7 @@ export function App() {
         </div>
       )}
 
-      <Footer />
+      {items.length > 0 && <Footer />}
       <input ref={input} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf,video/mp4,video/quicktime,.jpg,.jpeg,.png,.webp,.heic,.heif,.pdf,.docx,.xlsx,.pptx,.mp4,.mov,.m4v" multiple hidden onChange={(e) => { void addFiles(fromInput([...(e.target.files ?? [])])); e.target.value = ''; }} />
       <input ref={folderInput} type="file" multiple hidden {...{ webkitdirectory: '' }} onChange={(e) => { const all = [...(e.target.files ?? [])]; const ok = all.filter((f) => EXTENSIONS.test(f.name)); void addFiles(fromInput(ok), all.length - ok.length); e.target.value = ''; }} />
       <div className="sr" role="status" aria-live="polite">{announce}</div>
@@ -247,7 +259,7 @@ function Header({ onProof }: { onProof: () => void }) {
   );
 }
 
-function Empty({ onPick, onSample }: { onPick: () => void; onSample: () => void }) {
+function Empty({ onPick, onFolder, onSample }: { onPick: () => void; onFolder: () => void; onSample: () => void }) {
   return (
     <div className="hero">
       <div className="hero-main">
@@ -255,16 +267,20 @@ function Empty({ onPick, onSample }: { onPick: () => void; onSample: () => void 
         <h1>Your photos talk.<br /><em>Make them hush.</em></h1>
         <p className="steps" aria-label="How it works"><b>Drop</b> {'·'} <b>See</b> {'·'} <b>Clean</b></p>
         <p className="lede">Every photo, PDF, Office file and video you share can carry the GPS spot you stood on, your phone&rsquo;s serial number, the author&rsquo;s name, the second it was made, and a hidden copy of whatever you cropped out. Drop it in to see exactly what it gives away, then wipe it.</p>
-        <button className="drop" onClick={onPick} aria-label="Choose photos to scan. You can also drag and drop files here.">
+        <button className="drop" onClick={onPick} aria-label="Choose files to scan. You can also drag and drop files or a folder here.">
           <span className="corners" aria-hidden="true" />
-          <span className="drop-title">Drop files or a whole folder</span>
-          <span className="drop-sub">or tap to choose from your library {'·'} photos, PDF, Office, video {'·'} folders OK</span>
+          <svg className="upload" viewBox="0 0 48 48" width="44" height="44" aria-hidden="true"><path d="M24 33V10M14 19l10-10 10 10" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="square" /><path d="M8 30v10h32V30" fill="none" stroke="currentColor" strokeWidth="3" /></svg>
+          <span className="drop-text">
+            <span className="drop-title">Drop files or a whole folder</span>
+            <span className="drop-sub">or click anywhere here to choose {'·'} photos, PDF, Office, video</span>
+          </span>
         </button>
         <div className="hero-actions">
-          <button className="btn primary" onClick={onPick}>Choose files</button>
-          <button className="btn ghost" onClick={onSample}>Try a sample with GPS</button>
+          <button className="btn primary" onClick={onSample}>Try a sample with GPS</button>
+          <button className="btn ghost" onClick={onFolder}>Choose a folder</button>
         </div>
         <p className="fine">Files are read in your browser and never sent anywhere. The page&rsquo;s security policy forbids network requests entirely.</p>
+        <p className="fine limits"><b>Honest limits.</b> Hushprint removes metadata, not what is visible in the picture, page or video. HEIC export re-encodes to JPEG, and some PDF and video leaks are shown but cannot be removed losslessly.</p>
       </div>
       <aside className="specimen" aria-label="Example of what a photo can reveal">
         <p className="eyebrow">Specimen {'·'} illustration</p>
@@ -288,6 +304,8 @@ function Report({ item }: { item: Item }) {
   const done = !!item.result;
   // play the scrub animation, then fold the per-category detail away so the clean state stays short
   const [folded, setFolded] = useState(done);
+  const [all, setAll] = useState(false);
+  const narrow = useNarrow();
   useEffect(() => { if (!done) return; const t = setTimeout(() => setFolded(true), 1900); return () => clearTimeout(t); }, [done]);
   if (item.error) return <div className="verdict sev-bg-high"><p className="eyebrow">{item.file.name}</p><h2>We couldn&rsquo;t scan this file.</h2><p className="lede">{item.error}</p></div>;
   if (!a) return <div className="verdict"><p className="eyebrow">{item.file.name}</p><h2>Scanning&hellip;</h2></div>;
@@ -346,7 +364,7 @@ function Report({ item }: { item: Item }) {
 
       <div className="cards" hidden={folded}>
         {groups.length === 0 && <p className="nothing">No metadata fields found. This image is already quiet.</p>}
-        {groups.map(({ cat, list }) => {
+        {(all ? groups : groups.slice(0, narrow ? 1 : 2)).map(({ cat, list }) => {
           const top = list.reduce<Severity>((m, f) => (RANK[f.severity] > RANK[m] ? f.severity : m), 'info');
           return (
             <section key={cat} className={`card${done ? ' scrubbed' : ''}`} style={{ '--c': `var(--${top})` } as CSSProperties}>
@@ -358,6 +376,10 @@ function Report({ item }: { item: Item }) {
           );
         })}
       </div>
+
+      {!all && !folded && groups.length > (narrow ? 1 : 2) && (
+        <button className="btn ghost seeall" onClick={() => setAll(true)}>See all {leaks.length} leaks</button>
+      )}
 
       {done && item.result && <Diff r={item.result} />}
     </>
