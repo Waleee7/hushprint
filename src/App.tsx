@@ -182,7 +182,8 @@ export function App() {
                 ))}
               </ul>
               <div className="settings">
-                <label className="check"><input type="checkbox" checked={keepRotation} disabled={allCleaned} onChange={(e) => setKeepRotation(e.target.checked)} /> Keep photo rotation tag <span className="hint">(recommended; off = rotate the pixels for real, which re-encodes rotated images)</span></label>
+                <label className="check"><input type="checkbox" checked={keepRotation} disabled={allCleaned} onChange={(e) => setKeepRotation(e.target.checked)} /> <span>Keep rotation tag <span className="hint">(recommended)</span></span></label>
+                <p className="hint small">Off bakes the rotation into the pixels, which re-encodes rotated images.</p>
               </div>
               <button className="link subtle" onClick={reset}>Remove all &amp; start over</button>
             </aside>

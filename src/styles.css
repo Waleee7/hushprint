@@ -272,3 +272,13 @@ code, .csp { font-family: var(--mono); } code { color: var(--accent); }
 }
 .steps { margin: 0; font: 700 15px var(--display); letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
 .steps b { font-weight: 700; }
+
+.hint.small { margin: 0 0 8px; font-size: 11px; }
+@media (max-width: 600px) {
+  .ab-inner { flex-wrap: wrap; }
+  .ab-info { flex: 1 1 100%; flex-direction: row; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+  .ab-info > span:not(.scoreline):not(.saved) { display: none; }
+  .ab-btns { flex: 1 1 100%; }
+  .ab-btns .btn.primary { flex: 1; }
+  .ab-btns .btn.share { flex: 0 0 auto; }
+}

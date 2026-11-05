@@ -140,7 +140,7 @@ const readPdf = async (b: Uint8Array, ctx: Ctx): Promise<Common> => {
       if (sink.gps && !ctx.out.gps) ctx.out.gps = sink.gps;
     } catch { /* an embedded image that does not parse is not our concern */ }
   }
-  return { width: 0, height: 0, trailing: 0, trailingJpeg: false, detail: `PDF ${p.version}${p.linearized ? ' · linearized' : ''}` };
+  return { width: 0, height: 0, trailing: 0, trailingJpeg: false, detail: `v${p.version}${p.linearized ? ' · linearized' : ''}` };
 };
 
 const OFFICE_PROP: Record<string, [Category, Severity, string]> = {

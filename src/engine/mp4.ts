@@ -67,7 +67,7 @@ export const parseMp4 = (b: Uint8Array): VideoInfo => {
   const addTag = (kind: string, key: string, value: string, source: string) => {
     value = value.replace(/\0+/g, '').trim();
     if (!value || info.tags.length >= 60) return;
-    if (kind === 'gps') {
+    if (kind === 'gps' || /^\s*[+-]\d{1,2}(?:\.\d+)?[+-]\d{1,3}(?:\.\d+)?/.test(value)) {
       const g = parseIso6709(value);
       if (g) { info.gps ??= g; return; }
     }

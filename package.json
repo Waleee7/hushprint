@@ -1,16 +1,17 @@
 {
   "name": "hushprint",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Hushprint: see exactly what hidden data your photos leak (GPS, device serials, hidden thumbnails), then strip it. 100% in-browser, zero uploads, hand-written JPEG/PNG/EXIF/XMP engine.",
+  "description": "Hushprint: see what hidden data your photos, PDFs, Office files and videos leak (GPS, author names, serial numbers, hidden thumbnails), then strip it. 100% in-browser, offline, zero uploads, hand-written parsers.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "gen:landmask": "node scripts/gen-landmask.mjs"
+    "gen:landmask": "node scripts/gen-landmask.mjs",
+    "cli": "node bin/hushprint.mjs"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",
@@ -49,7 +50,21 @@
     "vite",
     "csp",
     "osint",
-    "aCropalypse"
+    "aCropalypse",
+    "webp",
+    "heic",
+    "pdf",
+    "docx",
+    "pwa",
+    "cli",
+    "mp4",
+    "privacy-score"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "bin": {
+    "hushprint": "bin/hushprint.mjs"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
 }
