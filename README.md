@@ -40,6 +40,30 @@ node bin/hushprint.mjs clean ./trip --out ./safe
 - **No network.** The production page ships `connect-src 'none'` and Trusted Types. A test fails the build if the policy weakens. "Prove it" in the header tries a request and shows the browser refuse it.
 - **Fuzzed.** `tests/fuzz.test.ts` feeds every parser mutated, truncated and hostile files: bad length fields, loops, decompression bombs.
 
+## Architecture
+
+```mermaid
+flowchart LR
+  F[File bytes<br/>dropped in the page or passed to the CLI] --> D[detectFormat]
+  D --> P["Hand-written parsers<br/>jpeg · png · webp · tiff/exif · xmp<br/>isobmff (mp4, mov, heic) · pdf · zip (docx, xlsx, pptx)"]
+  P --> R["Findings + privacy score<br/>GPS on an offline land map"]
+  R --> C[Clean: drop or blank metadata in place]
+  C --> V["Verify: re-parse the copy,<br/>hash image data, pages or samples"]
+  V --> UI[React page, offline service worker]
+  V --> CLI[bin/hushprint.mjs]
+```
+
+Everything in `src/engine` is pure TypeScript with no DOM and no network, so the page, the CLI and the tests all run the same code.
+
+## Tests
+
+```bash
+npm test         # Vitest: parsers, cleaning, verification, fuzzing, CSP guard
+npm run build    # type-check and production build
+```
+
+Last run on 2026-11-17: **117 of 117 tests passed** in 6 files.
+
 ## Limits
 
 - It removes metadata, not what is visible: faces, signs, house numbers, text on a page.
@@ -51,4 +75,18 @@ node bin/hushprint.mjs clean ./trip --out ./safe
 
 See [SECURITY.md](SECURITY.md) and [THREAT_MODEL.md](THREAT_MODEL.md).
 
-MIT licensed.
+## Status
+
+Not deployed as a public site yet: run it locally with `npm run dev`, or use the CLI. CI type-checks, tests and builds every push to `main` and every pull request.
+
+## Roadmap
+
+- Publish the web app.
+- Remove what is reported but not yet removed: PDF Info inside compressed object streams, earlier PDF revisions, tracked-change authors and per-frame video GPS.
+- Move parsing off the main thread for large batches.
+
+## Credits
+
+Built by [Akinwale Dare](https://github.com/Waleee7). The offline land map is rasterised from Natural Earth 110m land (public domain) through world-atlas. Fonts: Barlow Condensed, Barlow Semi Condensed and Permanent Marker via Fontsource (SIL Open Font License).
+
+MIT licensed, see [LICENSE](LICENSE).
